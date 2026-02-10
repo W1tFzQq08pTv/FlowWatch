@@ -9,6 +9,7 @@
 ## Features
 - Real-time upload/download speed in the menu bar
 - Today/total traffic stats and charts (Charts, macOS 13+)
+- Per-app traffic monitoring: track network usage by app with date range filtering
 - Custom sampling interval and display style
 - Automatic update checks with last/next check time
 - Optional file logging (daily logs, kept for 7 days)
@@ -35,6 +36,6 @@ Download the latest DMG from GitHub Releases:
 | --- | --- | --- |
 | <img src=".github/assets/statusbar-speed.png" width="260" alt="Status bar speed" /> | <img src=".github/assets/statusbar-today.png" width="260" alt="Status bar today" /> | <img src=".github/assets/statusbar-speed-today.png" width="260" alt="Status bar speed and today" /> |
 
-| Settings | Popup |
-| --- | --- |
-| <img src=".github/assets/settings-en.png" width="420" alt="Settings" /> | <img src=".github/assets/popup-en.png" width="420" alt="Popup" /> |
+| Settings | Popup | Per-App Traffic |
+| --- | --- | --- |
+| <img src=".github/assets/settings-en.png" width="300" alt="Settings" /> | <img src=".github/assets/popup-en.png" width="300" alt="Popup" /> | <img src=".github/assets/perapp-traffic-en.png" width="300" alt="Per-App Traffic" /> |

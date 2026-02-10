@@ -9,6 +9,7 @@
 ## 功能
 - 菜单栏实时显示上行/下行速率
 - 今日/累计流量统计与趋势图（Charts，macOS 13+）
+- 应用流量监控：按应用统计网络流量，支持日期范围筛选
 - 自定义采样间隔与显示样式
 - 自动检查更新并显示上次/下次检查时间
 - 可选日志输出（按天保存，保留 7 天）
@@ -36,6 +37,6 @@ brew install --cask flowwatch
 | --- | --- | --- |
 | <img src=".github/assets/statusbar-speed.png" width="260" alt="Status bar speed" /> | <img src=".github/assets/statusbar-today.png" width="260" alt="Status bar today" /> | <img src=".github/assets/statusbar-speed-today.png" width="260" alt="Status bar speed and today" /> |
 
-| 设置 | 弹窗 |
-| --- | --- |
-| <img src=".github/assets/settings.png" width="420" alt="Settings" /> | <img src=".github/assets/popup.png" width="420" alt="Popup" /> |
+| 设置 | 弹窗 | 应用流量 |
+| --- | --- | --- |
+| <img src=".github/assets/settings.png" width="300" alt="Settings" /> | <img src=".github/assets/popup.png" width="300" alt="Popup" /> | <img src=".github/assets/perapp-traffic.png" width="300" alt="Per-App Traffic" /> |
