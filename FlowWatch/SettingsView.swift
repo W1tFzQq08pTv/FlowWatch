@@ -7,6 +7,8 @@ struct SettingsView: View {
     @AppStorage("maxColorRateMbps") private var maxColorRateMbps: Double = 100
     @AppStorage("colorRatePercent") private var colorRatePercent: Double = 100
     @AppStorage("update.autoCheckEnabled") private var autoCheckEnabled: Bool = true
+    @AppStorage("perAppMonitoring.enabled") private var perAppMonitoringEnabled: Bool = false
+    @AppStorage("perAppMonitoring.sampleInterval") private var perAppSampleInterval: Double = 3.0
     @AppStorage("logging.enabled") private var loggingEnabled: Bool = true
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var isShowingResetAlert = false
@@ -189,6 +191,42 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
                 sectionLabel(l10n.t("settings.section.logging"), systemImage: "doc.text")
+            }
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(l10n.t("settings.perApp.toggle"), isOn: Binding(
+                        get: { perAppMonitoringEnabled },
+                        set: { newValue in
+                            perAppMonitoringEnabled = newValue
+                            LogManager.shared.log("Per-app monitoring enabled: \(newValue)")
+                            NotificationCenter.default.post(name: .flowWatchPerAppMonitoringChanged, object: nil)
+                        }
+                    ))
+                    HStack {
+                        Text(l10n.t("settings.perApp.interval"))
+                        Picker("", selection: Binding(
+                            get: { perAppSampleInterval },
+                            set: { newValue in
+                                perAppSampleInterval = newValue
+                                NotificationCenter.default.post(name: .flowWatchPerAppIntervalChanged, object: nil)
+                            }
+                        )) {
+                            Text(String(format: l10n.t("settings.perApp.interval.value"), 1)).tag(1.0)
+                            Text(String(format: l10n.t("settings.perApp.interval.value"), 3)).tag(3.0)
+                            Text(String(format: l10n.t("settings.perApp.interval.value"), 5)).tag(5.0)
+                            Text(String(format: l10n.t("settings.perApp.interval.value"), 10)).tag(10.0)
+                        }
+                        .labelsHidden()
+                        .frame(width: 80)
+                    }
+                    Text(l10n.t("settings.perApp.desc"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                sectionLabel(l10n.t("settings.section.perApp"), systemImage: "app.badge")
             }
 
             GroupBox {

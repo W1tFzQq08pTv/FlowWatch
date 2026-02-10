@@ -164,3 +164,30 @@
 "launch.prompt.message" = "Recommended to keep monitoring and recording daily traffic.\n\nYou can change this anytime in Settings…";
 "launch.prompt.enable" = "Enable";
 "launch.prompt.notNow" = "Not now";
+
+"settings.section.perApp" = "Per-App Monitoring";
+"settings.perApp.toggle" = "Enable per-app traffic monitoring";
+"settings.perApp.interval" = "Sample interval";
+"settings.perApp.interval.value" = "%d s";
+"settings.perApp.desc" = "Periodically samples each app's network traffic. May slightly increase CPU and memory usage.";
+
+"perApp.noData" = "No per-app data yet";
+"perApp.appCount" = "%d items";
+"perApp.detail.title" = "Per-App Traffic";
+"menu.perAppTraffic" = "Per-App Traffic…";
+"perApp.sort.total" = "Sort by Total";
+"perApp.sort.download" = "Sort by Download";
+"perApp.sort.upload" = "Sort by Upload";
+"perApp.sort.downloadSpeed" = "Sort by Download Speed";
+"perApp.sort.uploadSpeed" = "Sort by Upload Speed";
+"perApp.filter.all" = "All";
+"perApp.filter.apps" = "Apps";
+"perApp.filter.processes" = "Processes";
+"perApp.header.app" = "Application";
+"perApp.header.speed" = "Speed";
+"perApp.range.today" = "Today";
+"perApp.range.last7Days" = "Last 7 Days";
+"perApp.range.last30Days" = "Last 30 Days";
+"perApp.range.allTime" = "All Time";
+"perApp.summary.totalDownload" = "Total Download";
+"perApp.summary.totalUpload" = "Total Upload";
