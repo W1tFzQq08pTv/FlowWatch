@@ -342,7 +342,20 @@ final class UpdateManager: NSObject, ObservableObject {
         autoCheckTimer?.invalidate()
         autoCheckTimer = nil
 
-        guard let nextDate = computeNextCheckDate(now: Date()) else {
+        let now = Date()
+
+        // 检查是否已经错过了应该执行的检查
+        if shouldAutoCheck() {
+            LogManager.shared.log("Missed auto check detected, triggering immediate check")
+            // 延迟一小段时间执行，避免应用启动时立即执行
+            autoCheckTimer = Timer.scheduledTimer(withTimeInterval: initialAutoCheckDelay, repeats: false) { [weak self] _ in
+                self?.handleAutoCheckTimerFired()
+            }
+            nextCheckDate = now.addingTimeInterval(initialAutoCheckDelay)
+            return
+        }
+
+        guard let nextDate = computeNextCheckDate(now: now) else {
             nextCheckDate = nil
             LogManager.shared.log("Auto check disabled or not scheduled")
             return
