@@ -494,6 +494,8 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 
     nonisolated private static func fetchHomebrewVersion(formula: String) throws -> String {
+        // Refresh the tap index before checking version
+        _ = try? runBrew(arguments: ["update", "huangxida/flowwatch"])
         let output = try runBrew(arguments: ["info", "--json=v2", formula])
         let data = Data(output.utf8)
         let response = try JSONDecoder().decode(BrewInfoResponse.self, from: data)
