@@ -196,6 +196,16 @@ final class ProcessNetworkMonitor: ObservableObject {
             return nil
         }
 
+        // Read pipe data asynchronously to avoid deadlock when output exceeds pipe buffer
+        var outputData = Data()
+        let readQueue = DispatchQueue.global(qos: .utility)
+        let readGroup = DispatchGroup()
+        readGroup.enter()
+        readQueue.async {
+            outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+            readGroup.leave()
+        }
+
         let semaphore = DispatchSemaphore(value: 0)
         let waitQueue = DispatchQueue.global(qos: .utility)
         var didTerminate = false
@@ -215,8 +225,8 @@ final class ProcessNetworkMonitor: ObservableObject {
             return nil
         }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+        readGroup.wait()
+        return String(data: outputData, encoding: .utf8)
     }
 
     private func parseNettopOutput(_ output: String) -> [NettopEntry] {

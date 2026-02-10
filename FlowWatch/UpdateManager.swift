@@ -494,8 +494,8 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 
     nonisolated private static func fetchHomebrewVersion(formula: String) throws -> String {
-        // Refresh all tap indexes before checking version
-        _ = try? runBrew(arguments: ["update"])
+        // Refresh all tap indexes before checking version (15s timeout, skip on failure)
+        _ = try? runBrew(arguments: ["update"], timeout: 15)
         let output = try runBrew(arguments: ["info", "--json=v2", formula])
         let data = Data(output.utf8)
         let response = try JSONDecoder().decode(BrewInfoResponse.self, from: data)
@@ -508,7 +508,7 @@ final class UpdateManager: NSObject, ObservableObject {
         throw HomebrewError.invalidOutput
     }
 
-    nonisolated private static func runBrew(arguments: [String]) throws -> String {
+    nonisolated private static func runBrew(arguments: [String], timeout: TimeInterval? = nil) throws -> String {
         guard let brewURL = brewExecutableURL() else {
             throw HomebrewError.notFound
         }
@@ -527,9 +527,31 @@ final class UpdateManager: NSObject, ObservableObject {
             throw HomebrewError.commandFailed(error.localizedDescription)
         }
 
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
+        // Read pipe data asynchronously to avoid deadlock when output exceeds pipe buffer
+        var outputData = Data()
+        let readGroup = DispatchGroup()
+        readGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+            readGroup.leave()
+        }
+
+        if let timeout {
+            let semaphore = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .utility).async {
+                process.waitUntilExit()
+                semaphore.signal()
+            }
+            if semaphore.wait(timeout: .now() + timeout) == .timedOut {
+                process.terminate()
+                throw HomebrewError.commandFailed("timed out after \(Int(timeout))s")
+            }
+        } else {
+            process.waitUntilExit()
+        }
+
+        readGroup.wait()
+        let output = String(data: outputData, encoding: .utf8) ?? ""
         if process.terminationStatus != 0 {
             throw HomebrewError.commandFailed(output.trimmingCharacters(in: .whitespacesAndNewlines))
         }
