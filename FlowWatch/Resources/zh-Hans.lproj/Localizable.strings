@@ -142,7 +142,7 @@
 "update.available.title" = "发现新版本 %@";
 "update.available.message" = "是否现在更新？";
 "update.available.message.dmg" = "是否前往下载最新版本？";
-"update.available.message.brew" = "根据你当前的安装方式（Homebrew），请在终端执行升级命令：\n\nbrew upgrade flowwatch\n\n点击"复制命令"将命令复制到剪贴板。";
+"update.available.message.brew" = "根据你当前的安装方式（Homebrew），请在终端执行升级命令：\n\nbrew upgrade flowwatch\n\n点击「复制命令」将命令复制到剪贴板。";
 "update.available.updateNow" = "现在更新";
 "update.available.copyCommand" = "复制命令";
 "update.available.later" = "稍后";
