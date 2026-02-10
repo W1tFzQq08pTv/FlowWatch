@@ -46,6 +46,7 @@ final class UpdateManager: NSObject, ObservableObject {
     init(installMethod: InstallMethod = InstallMethodDetector.detect()) {
         self.installMethod = installMethod
         super.init()
+        LogManager.shared.log("UpdateManager initialized with install method: \(installMethod.rawValue)")
         loadLastCheckDate()
         loadCachedLatestVersion()
         clearCachedVersionIfNeeded()
