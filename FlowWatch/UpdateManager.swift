@@ -46,6 +46,7 @@ final class UpdateManager: NSObject, ObservableObject {
     init(installMethod: InstallMethod = InstallMethodDetector.detect()) {
         self.installMethod = installMethod
         super.init()
+        LogManager.shared.log("UpdateManager initialized with install method: \(installMethod.rawValue)")
         loadLastCheckDate()
         loadCachedLatestVersion()
         clearCachedVersionIfNeeded()
@@ -88,7 +89,7 @@ final class UpdateManager: NSObject, ObservableObject {
         LogManager.shared.log("Perform cached update action (installMethod=\(installMethod))")
         switch installMethod {
         case .homebrew:
-            performHomebrewUpgrade()
+            copyBrewUpgradeCommand()
         case .dmg:
             openUpdateURL(releaseURLString: cachedReleaseURL, downloadURLString: cachedDownloadURL)
         }
@@ -164,12 +165,7 @@ final class UpdateManager: NSObject, ObservableObject {
                         LogManager.shared.log("Homebrew update available: \(latestVersion)")
                         self.status = .updateAvailable(version: latestVersion)
                         if shouldNotify {
-                            self.notifyUpdateAvailable(
-                                version: latestVersion,
-                                messageKey: "update.available.message",
-                            ) { [weak self] in
-                                self?.performHomebrewUpgrade()
-                            }
+                            self.notifyHomebrewUpdateAvailable(version: latestVersion)
                         }
                     } else {
                         self.storeCachedLatestRelease(version: nil, releaseURL: nil, downloadURL: nil)
@@ -215,43 +211,12 @@ final class UpdateManager: NSObject, ObservableObject {
         )
     }
 
-    private func performHomebrewUpgrade() {
-        status = .updating
-        let formula = homebrewFormula
-        LogManager.shared.log("Homebrew upgrade started (\(formula))")
-        Task.detached { [weak self] in
-            do {
-                _ = try Self.runBrew(arguments: ["upgrade", formula])
-                await MainActor.run {
-                    guard let self else { return }
-                    self.storeCachedLatestRelease(version: nil, releaseURL: nil, downloadURL: nil)
-                    self.status = .idle
-                    LogManager.shared.log("Homebrew upgrade finished")
-                    self.notifyUpgradeSuccess()
-                }
-            } catch {
-                await MainActor.run {
-                    guard let self else { return }
-                    self.status = .idle
-                    LogManager.shared.log("Homebrew upgrade failed: \(error)", level: .error)
-                    self.notifyUpgradeFailed(message: self.message(for: error))
-                }
-            }
+
+    private func notifyHomebrewUpdateAvailable(version: String) {
+        let messageKey = "update.available.message.brew"
+        notifyUpdateAvailable(version: version, messageKey: messageKey) { [weak self] in
+            self?.copyBrewUpgradeCommand()
         }
-    }
-
-    private func notifyUpgradeSuccess() {
-        notificationCenter.post(
-            title: LocalizationManager.shared.t("update.upgrade.success.title"),
-            body: LocalizationManager.shared.t("update.upgrade.success.message")
-        )
-    }
-
-    private func notifyUpgradeFailed(message: String) {
-        notificationCenter.post(
-            title: LocalizationManager.shared.t("update.upgrade.failed.title"),
-            body: String(format: LocalizationManager.shared.t("update.upgrade.failed.message"), message)
-        )
     }
 
     private func notifyGitHubUpdateAvailable(version: String, releaseURLString: String?, downloadURLString: String?) {
@@ -260,6 +225,17 @@ final class UpdateManager: NSObject, ObservableObject {
             LogManager.shared.log("Open GitHub release page (version=\(version))")
             self?.openUpdateURL(releaseURLString: releaseURLString, downloadURLString: downloadURLString)
         }
+    }
+
+    private func copyBrewUpgradeCommand() {
+        let command = "brew upgrade \(homebrewFormula)"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        LogManager.shared.log("Copied brew upgrade command to clipboard")
+        notificationCenter.post(
+            title: LocalizationManager.shared.t("update.command.copied"),
+            body: LocalizationManager.shared.t("update.command.copied.message")
+        )
     }
 
     private func openUpdateURL(releaseURLString: String?, downloadURLString _: String?) {

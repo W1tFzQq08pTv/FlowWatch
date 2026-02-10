@@ -142,8 +142,12 @@
 "update.available.title" = "Update Available %@";
 "update.available.message" = "Update now?";
 "update.available.message.dmg" = "Open the download page for the latest version?";
+"update.available.message.brew" = "Based on your installation method (Homebrew), please run the upgrade command in Terminal:\n\nbrew upgrade flowwatch\n\nClick \"Copy Command\" to copy it to clipboard.";
 "update.available.updateNow" = "Update";
+"update.available.copyCommand" = "Copy Command";
 "update.available.later" = "Later";
+"update.command.copied" = "Command Copied";
+"update.command.copied.message" = "Paste and run the command in Terminal to upgrade.";
 "update.upgrade.success.title" = "Update Complete";
 "update.upgrade.success.message" = "Update finished. Please relaunch the app.";
 "update.upgrade.failed.title" = "Update Failed";
