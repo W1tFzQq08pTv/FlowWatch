@@ -8,6 +8,7 @@ final class StatusBarController: NSObject, ObservableObject {
     private let maxColorRateKey = "maxColorRateMbps"
     private let colorRatePercentKey = "colorRatePercent"
     private let monitor: NetworkUsageMonitor
+    private let processMonitor: ProcessNetworkMonitor
     private let statusItem: NSStatusItem
     private let updateManager = UpdateManager.shared
     private weak var updateMenuItem: NSMenuItem?
@@ -37,16 +38,19 @@ final class StatusBarController: NSObject, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var menu: NSMenu = NSMenu()
 
-    init(monitor: NetworkUsageMonitor) {
+    init(monitor: NetworkUsageMonitor, processMonitor: ProcessNetworkMonitor) {
         self.monitor = monitor
+        self.processMonitor = processMonitor
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.isVisible = true
         super.init()
+        PerAppTrafficDetailWindowController.shared.bindMonitor(processMonitor)
         configureStatusButton()
         bindMonitor()
         bindUserDefaults()
         bindNotifications()
         bindUpdateManager()
+        bindProcessMonitor()
         updateStatusButtonContent()
         scheduleAutomaticUpdateCheck()
     }
@@ -105,6 +109,33 @@ final class StatusBarController: NSObject, ObservableObject {
             .sink { [weak self] _ in
                 self?.updateManager.checkForUpdates(userInitiated: true)
                 self?.refreshUpdateMenuItem()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .flowWatchPerAppMonitoringChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let enabled = UserDefaults.standard.bool(forKey: "perAppMonitoring.enabled")
+                self.processMonitor.setEnabled(enabled)
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .flowWatchPerAppIntervalChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let interval = UserDefaults.standard.double(forKey: "perAppMonitoring.sampleInterval")
+                self.processMonitor.updateInterval(interval)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func bindProcessMonitor() {
+        processMonitor.$isEnabled
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.rebuildMenu()
             }
             .store(in: &cancellables)
     }
@@ -345,11 +376,13 @@ final class StatusBarController: NSObject, ObservableObject {
     private func performResetToday() {
         LogManager.shared.log("Reset today from status bar")
         monitor.resetTodayTraffic()
+        ProcessTrafficStorage.shared.clearTodayRecords()
     }
 
     private func performResetAllHistory() {
         LogManager.shared.log("Clear all history from status bar")
         monitor.clearAllTrafficHistory()
+        ProcessTrafficStorage.shared.clearAllRecords()
     }
 
     private func makeDailyTrafficMenuItem() -> NSMenuItem {
@@ -463,10 +496,21 @@ final class StatusBarController: NSObject, ObservableObject {
         return updateManager.cachedLatestVersion
     }
     
+    @objc private func openPerAppDetail() {
+        LogManager.shared.log("Open per-app traffic detail window")
+        PerAppTrafficDetailWindowController.shared.show()
+    }
+
     private func rebuildMenu() {
         let newMenu = NSMenu()
         newMenu.addItem(makeDailyTrafficMenuItem())
         newMenu.addItem(.separator())
+        if processMonitor.isEnabled {
+            let perAppItem = NSMenuItem(title: LocalizationManager.shared.t("menu.perAppTraffic"), action: #selector(openPerAppDetail), keyEquivalent: "")
+            perAppItem.target = self
+            newMenu.addItem(perAppItem)
+            newMenu.addItem(.separator())
+        }
         let settingsItem = NSMenuItem(title: LocalizationManager.shared.t("menu.settings"), action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.keyEquivalentModifierMask = [.command]
         settingsItem.target = self

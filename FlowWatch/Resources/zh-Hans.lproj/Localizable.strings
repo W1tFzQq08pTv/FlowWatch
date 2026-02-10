@@ -161,6 +161,33 @@
 "update.network.error" = "网络连接异常，请稍后再试。";
 
 "launch.prompt.title" = "开启开机自启动？";
-"launch.prompt.message" = "建议开启开机自启动，以便持续监控网速并记录每日流量。\n\n你可以在“设置…”中随时更改此选项。";
+"launch.prompt.message" = "建议开启开机自启动，以便持续监控网速并记录每日流量。\n\n你可以在\u201c设置\u2026\u201d中随时更改此选项。";
 "launch.prompt.enable" = "开启";
 "launch.prompt.notNow" = "暂不";
+
+"settings.section.perApp" = "每应用监控";
+"settings.perApp.toggle" = "开启每应用流量监控";
+"settings.perApp.interval" = "采集间隔";
+"settings.perApp.interval.value" = "%d 秒";
+"settings.perApp.desc" = "开启后会定期采集各应用的网络流量，可能略微增加 CPU 和内存占用。";
+
+"perApp.noData" = "暂无应用流量数据";
+"perApp.appCount" = "%d 项";
+"perApp.detail.title" = "应用流量";
+"menu.perAppTraffic" = "应用流量…";
+"perApp.sort.total" = "按总量排序";
+"perApp.sort.download" = "按下载排序";
+"perApp.sort.upload" = "按上传排序";
+"perApp.sort.downloadSpeed" = "按下行速度排序";
+"perApp.sort.uploadSpeed" = "按上行速度排序";
+"perApp.filter.all" = "全部";
+"perApp.filter.apps" = "应用";
+"perApp.filter.processes" = "系统进程";
+"perApp.header.app" = "应用";
+"perApp.header.speed" = "速率";
+"perApp.range.today" = "今日";
+"perApp.range.last7Days" = "近 7 天";
+"perApp.range.last30Days" = "近 30 天";
+"perApp.range.allTime" = "全部";
+"perApp.summary.totalDownload" = "总下载";
+"perApp.summary.totalUpload" = "总上传";
