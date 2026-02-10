@@ -26,7 +26,7 @@ final class ProcessNetworkMonitor: ObservableObject {
     private let nettopTimeout: TimeInterval = 5.0
 
     private var timer: DispatchSourceTimer?
-    private var lastSnapshot: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
+    private var lastSnapshot: [pid_t: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
     private let resolver = AppInfoResolver.shared
     private let storage = ProcessTrafficStorage.shared
     private let queue = DispatchQueue(label: "com.flowwatch.processmonitor", qos: .utility)
@@ -93,41 +93,45 @@ final class ProcessNetworkMonitor: ObservableObject {
         guard let output = runNettop() else { return }
         let parsed = parseNettopOutput(output)
 
-        var aggregated: [String: (info: AppInfo, bytesIn: UInt64, bytesOut: UInt64)] = [:]
+        let previous = lastSnapshot
+        var newSnapshot: [pid_t: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
+
+        // Step 1: Compute delta per PID, then aggregate by bundleID
+        var bundleDeltas: [String: (info: AppInfo, deltaIn: UInt64, deltaOut: UInt64)] = [:]
 
         for entry in parsed {
-            let info = resolver.resolve(pid: entry.pid, processName: entry.processName)
-            let key = info.bundleID
-            if var existing = aggregated[key] {
-                existing.bytesIn += entry.bytesIn
-                existing.bytesOut += entry.bytesOut
-                aggregated[key] = existing
-            } else {
-                aggregated[key] = (info: info, bytesIn: entry.bytesIn, bytesOut: entry.bytesOut)
-            }
-        }
-
-        let previous = lastSnapshot
-        var newSnapshot: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
-        var rates: [AppTrafficRate] = []
-
-        for (bundleID, data) in aggregated {
-            newSnapshot[bundleID] = (bytesIn: data.bytesIn, bytesOut: data.bytesOut)
+            newSnapshot[entry.pid] = (bytesIn: entry.bytesIn, bytesOut: entry.bytesOut)
 
             var deltaIn: UInt64 = 0
             var deltaOut: UInt64 = 0
-
-            if let prev = previous[bundleID] {
-                deltaIn = data.bytesIn >= prev.bytesIn ? data.bytesIn - prev.bytesIn : 0
-                deltaOut = data.bytesOut >= prev.bytesOut ? data.bytesOut - prev.bytesOut : 0
+            if let prev = previous[entry.pid] {
+                deltaIn = entry.bytesIn >= prev.bytesIn ? entry.bytesIn - prev.bytesIn : 0
+                deltaOut = entry.bytesOut >= prev.bytesOut ? entry.bytesOut - prev.bytesOut : 0
             }
 
-            if deltaIn > 0 || deltaOut > 0 {
+            let info = resolver.resolve(pid: entry.pid, processName: entry.processName)
+            let key = info.bundleID
+            if var existing = bundleDeltas[key] {
+                existing.deltaIn += deltaIn
+                existing.deltaOut += deltaOut
+                bundleDeltas[key] = existing
+            } else {
+                bundleDeltas[key] = (info: info, deltaIn: deltaIn, deltaOut: deltaOut)
+            }
+        }
+
+        lastSnapshot = newSnapshot
+
+        // Step 2: Persist deltas and build rates
+        var rates: [AppTrafficRate] = []
+
+        for (bundleID, data) in bundleDeltas {
+            if data.deltaIn > 0 || data.deltaOut > 0 {
                 storage.addBytes(
                     bundleID: bundleID,
                     displayName: data.info.displayName,
-                    downloadBytes: deltaIn,
-                    uploadBytes: deltaOut
+                    downloadBytes: data.deltaIn,
+                    uploadBytes: data.deltaOut
                 )
             }
 
@@ -138,8 +142,8 @@ final class ProcessNetworkMonitor: ObservableObject {
                 displayName: data.info.displayName,
                 icon: data.info.icon,
                 isApp: data.info.isApp,
-                downloadBps: Double(deltaIn) / sampleInterval,
-                uploadBps: Double(deltaOut) / sampleInterval,
+                downloadBps: Double(data.deltaIn) / sampleInterval,
+                uploadBps: Double(data.deltaOut) / sampleInterval,
                 totalDownloaded: todayRecord?.downloadBytes ?? 0,
                 totalUploaded: todayRecord?.uploadBytes ?? 0
             ))
@@ -147,7 +151,7 @@ final class ProcessNetworkMonitor: ObservableObject {
 
         // Include apps from storage that aren't currently active
         for record in storage.getTodayRecords() {
-            if aggregated[record.bundleID] == nil {
+            if bundleDeltas[record.bundleID] == nil {
                 let info = resolver.resolve(pid: 0, processName: record.displayName)
                 rates.append(AppTrafficRate(
                     id: record.bundleID,
@@ -161,8 +165,6 @@ final class ProcessNetworkMonitor: ObservableObject {
                 ))
             }
         }
-
-        lastSnapshot = newSnapshot
 
         rates.sort { ($0.totalDownloaded + $0.totalUploaded) > ($1.totalDownloaded + $1.totalUploaded) }
 
@@ -249,7 +251,7 @@ final class ProcessNetworkMonitor: ObservableObject {
 
             let processField = columns[0].trimmingCharacters(in: .whitespaces)
 
-            // Process field format: "processName.pid" or "processName.pid.threadID"
+            // Process field format: "processName.pid" (-P flag = process mode)
             guard let pidInfo = parseProcessField(processField) else { continue }
 
             let bytesIn = UInt64(columns[bytesInIndex].trimmingCharacters(in: .whitespaces)) ?? 0

@@ -19,15 +19,15 @@ final class AppInfoResolver {
     private init() {}
 
     func resolve(pid: pid_t, processName: String) -> AppInfo {
+        let execPath = executablePath(for: pid)
+        let resolvedPath = execPath ?? processName
+
         lock.lock()
-        if let cached = cache[pid] {
+        if let cached = cache[pid], cached.executablePath == resolvedPath {
             lock.unlock()
             return cached
         }
         lock.unlock()
-
-        let execPath = executablePath(for: pid)
-        let resolvedPath = execPath ?? processName
 
         lock.lock()
         if let cachedByPath = pathCache[resolvedPath] {
