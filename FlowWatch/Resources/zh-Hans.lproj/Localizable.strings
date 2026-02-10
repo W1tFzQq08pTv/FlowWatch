@@ -165,8 +165,8 @@
 "launch.prompt.enable" = "开启";
 "launch.prompt.notNow" = "暂不";
 
-"settings.section.perApp" = "每应用监控";
-"settings.perApp.toggle" = "开启每应用流量监控";
+"settings.section.perApp" = "应用流量";
+"settings.perApp.toggle" = "开启应用流量监控";
 "settings.perApp.interval" = "采集间隔";
 "settings.perApp.interval.value" = "%d 秒";
 "settings.perApp.desc" = "开启后会定期采集各应用的网络流量，可能略微增加 CPU 和内存占用。";
