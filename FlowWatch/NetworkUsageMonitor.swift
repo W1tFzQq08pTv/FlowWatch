@@ -115,7 +115,18 @@ final class NetworkUsageMonitor: ObservableObject {
                 let isUp = (flags & IFF_UP) == IFF_UP
                 let isLoopback = (flags & IFF_LOOPBACK) == IFF_LOOPBACK
 
-                if isUp && !isLoopback, let dataPointer = pointer.pointee.ifa_data {
+                // 获取接口名称，过滤虚拟网卡
+                let name = String(cString: pointer.pointee.ifa_name)
+                let isVirtualInterface = name.hasPrefix("utun") || 
+                                       name.hasPrefix("tap") || 
+                                       name.hasPrefix("tun") ||
+                                       name.hasPrefix("ipsec") ||
+                                       name.hasPrefix("ppp") ||
+                                       name.hasPrefix("bridge") ||
+                                       name.hasPrefix("awdl") || // Apple Wireless Direct Link
+                                       name.hasPrefix("llw")     // Low Latency WLAN
+
+                if isUp && !isLoopback && !isVirtualInterface, let dataPointer = pointer.pointee.ifa_data {
                     let data = dataPointer.assumingMemoryBound(to: if_data.self).pointee
                     rx &+= UInt64(data.ifi_ibytes)
                     tx &+= UInt64(data.ifi_obytes)
