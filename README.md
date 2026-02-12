@@ -6,6 +6,8 @@
 
 简体中文 | [English](README.en.md)
 
+> 🖥 Windows 版本：[FlowWatch-Win](https://github.com/huangxida/FlowWatch-Win)
+
 ## 功能
 - 菜单栏实时显示上行/下行速率
 - 今日/累计流量统计与趋势图（Charts，macOS 13+）
