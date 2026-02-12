@@ -6,6 +6,8 @@
 
 [简体中文](README.md) | English
 
+> 🖥 Windows version: [FlowWatch-Win](https://github.com/huangxida/FlowWatch-Win)
+
 ## Features
 - Real-time upload/download speed in the menu bar
 - Today/total traffic stats and charts (Charts, macOS 13+)
