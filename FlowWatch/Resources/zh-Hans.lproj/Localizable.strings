@@ -60,6 +60,7 @@
 "daily.title" = "流量统计";
 "daily.section.last7days" = "近 7 天";
 "daily.section.allHistory" = "全部历史";
+"daily.section.allHistory.days" = "%d 天";
 "daily.download" = "下载";
 "daily.upload" = "上传";
 "daily.avg" = "日均 %@";
