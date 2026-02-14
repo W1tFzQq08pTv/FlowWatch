@@ -49,41 +49,63 @@ struct DailyTrafficView: View {
     }
 
     private var summarySection: some View {
-        HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                sectionHeader("daily.section.last7days")
-                HStack(alignment: .top, spacing: 14) {
-                    metricColumn(
-                        titleKey: "daily.download",
-                        value: ByteAxisFormatter.formatMB(viewModel.totalDownloadMB),
-                        subtitle: String(format: l10n.t("daily.avg"), ByteAxisFormatter.formatMB(viewModel.averageDownloadMB))
-                    )
-                    metricColumn(
-                        titleKey: "daily.upload",
-                        value: ByteAxisFormatter.formatMB(viewModel.totalUploadMB),
-                        subtitle: String(format: l10n.t("daily.avg"), ByteAxisFormatter.formatMB(viewModel.averageUploadMB))
-                    )
+        GroupBox {
+            HStack(alignment: .top, spacing: 10) {
+                summaryCard {
+                    sectionHeader("daily.section.last7days")
+                    HStack(alignment: .top, spacing: 14) {
+                        metricColumn(
+                            titleKey: "daily.download",
+                            value: ByteAxisFormatter.formatMB(viewModel.totalDownloadMB),
+                            subtitle: String(format: l10n.t("daily.avg"), ByteAxisFormatter.formatMB(viewModel.averageDownloadMB))
+                        )
+                        metricColumn(
+                            titleKey: "daily.upload",
+                            value: ByteAxisFormatter.formatMB(viewModel.totalUploadMB),
+                            subtitle: String(format: l10n.t("daily.avg"), ByteAxisFormatter.formatMB(viewModel.averageUploadMB))
+                        )
+                    }
+                }
+
+                summaryCard {
+                    HStack(spacing: 4) {
+                        sectionHeader("daily.section.allHistory")
+                        if viewModel.allTimeDaysCount > 0 {
+                            Text(String(format: l10n.t("daily.section.allHistory.days"), viewModel.allTimeDaysCount))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    HStack(alignment: .top, spacing: 14) {
+                        metricColumn(
+                            titleKey: "daily.download",
+                            value: ByteAxisFormatter.formatMB(viewModel.allTimeDownloadMB),
+                            subtitle: String(format: l10n.t("daily.avg"), ByteAxisFormatter.formatMB(viewModel.allTimeAverageDownloadMB))
+                        )
+                        metricColumn(
+                            titleKey: "daily.upload",
+                            value: ByteAxisFormatter.formatMB(viewModel.allTimeUploadMB),
+                            subtitle: String(format: l10n.t("daily.avg"), ByteAxisFormatter.formatMB(viewModel.allTimeAverageUploadMB))
+                        )
+                    }
                 }
             }
-
-            Spacer(minLength: 24)
-
-            VStack(alignment: .leading, spacing: 6) {
-                sectionHeader("daily.section.allHistory")
-                HStack(alignment: .top, spacing: 14) {
-                    metricColumn(
-                        titleKey: "daily.download",
-                        value: ByteAxisFormatter.formatMB(viewModel.allTimeDownloadMB),
-                        subtitle: String(format: l10n.t("daily.avg"), ByteAxisFormatter.formatMB(viewModel.allTimeAverageDownloadMB))
-                    )
-                    metricColumn(
-                        titleKey: "daily.upload",
-                        value: ByteAxisFormatter.formatMB(viewModel.allTimeUploadMB),
-                        subtitle: String(format: l10n.t("daily.avg"), ByteAxisFormatter.formatMB(viewModel.allTimeAverageUploadMB))
-                    )
-                }
-            }
+        } label: {
+            EmptyView()
         }
+    }
+
+    private func summaryCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            content()
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color(.controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
     }
 
     private func metricColumn(titleKey: String, value: String, subtitle: String?) -> some View {
@@ -448,7 +470,11 @@ struct DailyTrafficView: View {
 
         let maxLabel = ByteAxisFormatter.formatMB(maxValue)
         if lastLabel != maxLabel {
-            values.append(maxValue)
+            if let last = values.last, (maxValue - last) < step * 0.5 {
+                values[values.count - 1] = maxValue
+            } else {
+                values.append(maxValue)
+            }
         }
 
         return values
@@ -680,6 +706,10 @@ final class DailyTrafficViewModel: ObservableObject {
     var allTimeAverageUploadMB: Double {
         guard !allRecords.isEmpty else { return 0 }
         return allTimeUploadMB / Double(allRecords.count)
+    }
+
+    var allTimeDaysCount: Int {
+        allRecords.count
     }
 
     init(storage: DailyTrafficStorage = .shared) {
