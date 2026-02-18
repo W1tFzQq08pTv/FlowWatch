@@ -5,6 +5,7 @@
 //  Created by xida huang on 12/5/25.
 //
 
+import AppKit
 import Foundation
 import Network
 import Combine
@@ -27,6 +28,8 @@ final class NetworkUsageMonitor: ObservableObject {
     private var timer: DispatchSourceTimer?
     private var dayChangeTimer: DispatchSourceTimer?
     private var lastRecordedDate: Date = Date()
+    private let sampleQueue = DispatchQueue(label: "com.flowwatch.networkSample")
+    private var wakeObserver: NSObjectProtocol?
 
     init() {
         loadTodayTraffic()
@@ -36,11 +39,21 @@ final class NetworkUsageMonitor: ObservableObject {
         LogManager.shared.log("NetworkUsageMonitor initialized (sampleInterval=\(sampleInterval))")
         startTimer()
         startDayChangeTimer()
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleSystemWake()
+        }
     }
 
     deinit {
         timer?.cancel()
         dayChangeTimer?.cancel()
+        if let observer = wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
     }
 
     func toggle() {
@@ -63,7 +76,7 @@ final class NetworkUsageMonitor: ObservableObject {
     }
 
     private func startTimer() {
-        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        let timer = DispatchSource.makeTimerSource(queue: sampleQueue)
         timer.schedule(deadline: .now(), repeating: sampleInterval)
         timer.setEventHandler { [weak self] in
             self?.sample()
@@ -78,14 +91,20 @@ final class NetworkUsageMonitor: ObservableObject {
         let bytes = currentBytes()
 
         guard let lastRx = lastRx, let lastTx = lastTx else {
+            LogManager.shared.log("Sample baseline established: rx=\(bytes.rx), tx=\(bytes.tx)")
             self.lastRx = bytes.rx
             self.lastTx = bytes.tx
             return
         }
 
         // 防止网卡重置或计数回绕导致的巨大跳变（计数变小视为重置，本次增量归零）
-        let deltaRx: UInt64 = bytes.rx >= lastRx ? bytes.rx - lastRx : 0
-        let deltaTx: UInt64 = bytes.tx >= lastTx ? bytes.tx - lastTx : 0
+        let counterResetRx = bytes.rx < lastRx
+        let counterResetTx = bytes.tx < lastTx
+        if counterResetRx || counterResetTx {
+            LogManager.shared.log("Counter reset detected: rx \(lastRx) -> \(bytes.rx), tx \(lastTx) -> \(bytes.tx)")
+        }
+        let deltaRx: UInt64 = counterResetRx ? 0 : bytes.rx - lastRx
+        let deltaTx: UInt64 = counterResetTx ? 0 : bytes.tx - lastTx
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -281,7 +300,9 @@ final class NetworkUsageMonitor: ObservableObject {
 
         if today > lastRecorded {
             // 新的一天开始了，保存昨天的数据
-            LogManager.shared.log("Day changed, reset daily counters")
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            LogManager.shared.log("Day changed: \(formatter.string(from: lastRecordedDate)) -> \(formatter.string(from: Date())), saving download=\(todayDownloaded), upload=\(todayUploaded)")
             saveTodayTraffic()
 
             // 重置今日流量
@@ -293,6 +314,18 @@ final class NetworkUsageMonitor: ObservableObject {
 
             lastRecordedDate = Date()
         }
+    }
+
+    private func handleSystemWake() {
+        LogManager.shared.log("System woke from sleep: todayDownloaded=\(todayDownloaded), todayUploaded=\(todayUploaded), resetting sample baseline and checking day change")
+        // 将 lastRx/lastTx 置 nil，确保唤醒后首次采样只建立基准值，
+        // 不把 Power Nap 期间累积的流量一次性计入当日统计，造成数值虚高
+        sampleQueue.async { [weak self] in
+            self?.lastRx = nil
+            self?.lastTx = nil
+        }
+        // 立即执行切日检测，不再等待最多 60 秒的定时器触发
+        checkAndSaveForDayChange()
     }
 
     func saveTrafficData() {
