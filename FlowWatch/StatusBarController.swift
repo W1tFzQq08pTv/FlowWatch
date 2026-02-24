@@ -51,6 +51,7 @@ final class StatusBarController: NSObject, ObservableObject {
     private var targetUploadBps: Double = 0
     private var targetTodayDownloaded: Double = 0
     private var targetTodayUploaded: Double = 0
+    private var lastRenderedKey: String = ""
     private var animationTimer: DispatchSourceTimer?
     private var animationStartTime: CFTimeInterval = 0
     private var animationDuration: CFTimeInterval {
@@ -188,7 +189,19 @@ final class StatusBarController: NSObject, ObservableObject {
             .store(in: &cancellables)
     }
 
+    private func currentRenderKey() -> String {
+        let downSpeed = monitor.fixedWidthCompactSpeed(displayedDownloadBps)
+        let upSpeed = monitor.fixedWidthCompactSpeed(displayedUploadBps)
+        let downTotal = monitor.fixedWidthDataAmount(UInt64(displayedTodayDownloaded))
+        let upTotal = monitor.fixedWidthDataAmount(UInt64(displayedTodayUploaded))
+        return "\(displayMode.rawValue)|\(downSpeed)|\(upSpeed)|\(downTotal)|\(upTotal)"
+    }
+
     private func updateStatusButtonContent() {
+        let key = currentRenderKey()
+        if animationTimer != nil && key == lastRenderedKey { return }
+        lastRenderedKey = key
+
         guard let button = statusItem.button else { return }
         button.image = nil
         button.imagePosition = .imageOnly
@@ -552,6 +565,14 @@ final class StatusBarController: NSObject, ObservableObject {
         targetUploadBps = targetUp
         targetTodayDownloaded = targetTodayDown
         targetTodayUploaded = targetTodayUp
+
+        let noChange = startDownloadBps == targetDown && startUploadBps == targetUp
+            && startTodayDownloaded == targetTodayDown && startTodayUploaded == targetTodayUp
+        if noChange {
+            updateStatusButtonContent()
+            return
+        }
+
         animationStartTime = CACurrentMediaTime()
 
         guard animationTimer == nil else { return }
