@@ -13,13 +13,17 @@ struct DailyTrafficRecord: Codable, Identifiable {
     var downloadBytes: UInt64
     var uploadBytes: UInt64
 
+    static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
     init(date: Date = Date(), downloadBytes: UInt64 = 0, uploadBytes: UInt64 = 0) {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         self.date = calendar.date(from: components) ?? date
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        self.id = formatter.string(from: self.date)
+        self.id = DailyTrafficRecord.dateFormatter.string(from: self.date)
         self.downloadBytes = downloadBytes
         self.uploadBytes = uploadBytes
     }
@@ -31,9 +35,14 @@ final class DailyTrafficStorage {
     private let userDefaultsKey = "dailyTrafficRecords"
 
     private var records: [DailyTrafficRecord] = []
+    private let lock = NSLock()
+    private var isDirty = false
+    private var saveTimer: DispatchSourceTimer?
+    private let saveInterval: TimeInterval = 30
 
     private init() {
         loadRecords()
+        startSaveTimer()
     }
 
     private var filePath: URL {
@@ -60,6 +69,36 @@ final class DailyTrafficStorage {
         try? encoded.write(to: filePath)
     }
 
+    // MARK: - 定时保存
+
+    private func startSaveTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        timer.schedule(deadline: .now() + saveInterval, repeating: saveInterval)
+        timer.setEventHandler { [weak self] in
+            self?.saveIfNeeded(force: false)
+        }
+        timer.resume()
+        self.saveTimer = timer
+    }
+
+    func saveIfNeeded(force: Bool) {
+        lock.lock()
+        guard isDirty || force else {
+            lock.unlock()
+            return
+        }
+        isDirty = false
+        let snapshot = records
+        lock.unlock()
+
+        guard let encoded = try? JSONEncoder().encode(snapshot) else { return }
+        try? encoded.write(to: filePath)
+    }
+
+    func forceSave() {
+        saveIfNeeded(force: true)
+    }
+
     func getTodayRecord() -> DailyTrafficRecord {
         let today = DailyTrafficRecord()
         if let index = records.firstIndex(where: { $0.id == today.id }) {
@@ -78,7 +117,9 @@ final class DailyTrafficStorage {
         } else {
             records.append(DailyTrafficRecord(downloadBytes: downloadBytes, uploadBytes: uploadBytes))
         }
-        saveToFile()
+        lock.lock()
+        isDirty = true
+        lock.unlock()
     }
 
     func addBytesToToday(downloadBytes: UInt64, uploadBytes: UInt64) {
@@ -91,7 +132,9 @@ final class DailyTrafficStorage {
         } else {
             records.append(DailyTrafficRecord(downloadBytes: downloadBytes, uploadBytes: uploadBytes))
         }
-        saveToFile()
+        lock.lock()
+        isDirty = true
+        lock.unlock()
     }
 
     func getRecentDays(days: Int) -> [DailyTrafficRecord] {

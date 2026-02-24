@@ -114,8 +114,8 @@ final class NetworkUsageMonitor: ObservableObject {
             self.totalUploaded &+= deltaTx
             self.todayDownloaded &+= deltaRx
             self.todayUploaded &+= deltaTx
-            // 实时保存今日流量数据
-            self.saveTodayTraffic()
+            // 由 DailyTrafficStorage 的 isDirty + 定时保存机制负责持久化
+            DailyTrafficStorage.shared.updateTodayRecord(downloadBytes: self.todayDownloaded, uploadBytes: self.todayUploaded)
         }
 
         self.lastRx = bytes.rx
@@ -252,7 +252,8 @@ final class NetworkUsageMonitor: ObservableObject {
             self.totalUploaded = 0
             self.todayDownloaded = 0
             self.todayUploaded = 0
-            self.saveTodayTraffic()
+            DailyTrafficStorage.shared.updateTodayRecord(downloadBytes: 0, uploadBytes: 0)
+            DailyTrafficStorage.shared.forceSave()
         }
     }
 
@@ -264,7 +265,6 @@ final class NetworkUsageMonitor: ObservableObject {
             self.totalUploaded = 0
             self.todayDownloaded = 0
             self.todayUploaded = 0
-            self.saveTodayTraffic()
         }
     }
 
@@ -278,11 +278,6 @@ final class NetworkUsageMonitor: ObservableObject {
         lastRecordedDate = Date()
     }
 
-    private func saveTodayTraffic() {
-        let storage = DailyTrafficStorage.shared
-        storage.updateTodayRecord(downloadBytes: todayDownloaded, uploadBytes: todayUploaded)
-    }
-
     private func startDayChangeTimer() {
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
         timer.schedule(deadline: .now(), repeating: .seconds(60))
@@ -293,6 +288,12 @@ final class NetworkUsageMonitor: ObservableObject {
         self.dayChangeTimer = timer
     }
 
+    private static let dayChangeDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
     private func checkAndSaveForDayChange() {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -300,10 +301,9 @@ final class NetworkUsageMonitor: ObservableObject {
 
         if today > lastRecorded {
             // 新的一天开始了，保存昨天的数据
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
+            let formatter = Self.dayChangeDateFormatter
             LogManager.shared.log("Day changed: \(formatter.string(from: lastRecordedDate)) -> \(formatter.string(from: Date())), saving download=\(todayDownloaded), upload=\(todayUploaded)")
-            saveTodayTraffic()
+            DailyTrafficStorage.shared.forceSave()
 
             // 重置今日流量
             DispatchQueue.main.async { [weak self] in
@@ -330,7 +330,7 @@ final class NetworkUsageMonitor: ObservableObject {
 
     func saveTrafficData() {
         LogManager.shared.log("Save traffic data on terminate")
-        saveTodayTraffic()
+        DailyTrafficStorage.shared.forceSave()
     }
 
     func getRecentDays(days: Int) -> [DailyTrafficRecord] {

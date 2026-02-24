@@ -108,12 +108,21 @@ final class PerAppTrafficViewModel: ObservableObject {
 
 // MARK: - Window Controller
 
-final class PerAppTrafficDetailWindowController: NSWindowController {
+final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDelegate {
     static let shared = PerAppTrafficDetailWindowController()
 
     private static let detailViewModel = PerAppTrafficViewModel()
 
     private init() {
+        super.init(window: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    private func makeWindow() -> NSWindow {
         let hostingController = NSHostingController(
             rootView: LocalizedRootView { PerAppTrafficDetailView() }
                 .environmentObject(LocalizationManager.shared)
@@ -124,12 +133,8 @@ final class PerAppTrafficDetailWindowController: NSWindowController {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 520, height: 480))
-        super.init(window: window)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
+        window.delegate = self
+        return window
     }
 
     func bindMonitor(_ monitor: ProcessNetworkMonitor) {
@@ -137,10 +142,18 @@ final class PerAppTrafficDetailWindowController: NSWindowController {
     }
 
     func show() {
+        if window == nil {
+            self.window = makeWindow()
+        }
         window?.title = LocalizationManager.shared.t("perApp.detail.title")
         NSApp.activate(ignoringOtherApps: true)
         window?.center()
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        window?.contentViewController = nil
+        window = nil
     }
 }
 

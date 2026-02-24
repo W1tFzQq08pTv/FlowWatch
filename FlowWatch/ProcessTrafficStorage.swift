@@ -8,13 +8,17 @@ struct AppDailyTrafficRecord: Codable, Identifiable {
     var downloadBytes: UInt64
     var uploadBytes: UInt64
 
+    static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
     init(bundleID: String, displayName: String, date: Date = Date(), downloadBytes: UInt64 = 0, uploadBytes: UInt64 = 0) {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         self.date = calendar.date(from: components) ?? date
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let dateStr = formatter.string(from: self.date)
+        let dateStr = AppDailyTrafficRecord.dateFormatter.string(from: self.date)
         self.id = "\(bundleID)|\(dateStr)"
         self.bundleID = bundleID
         self.displayName = displayName
@@ -25,6 +29,12 @@ struct AppDailyTrafficRecord: Codable, Identifiable {
 
 final class ProcessTrafficStorage {
     static let shared = ProcessTrafficStorage()
+
+    private static let todayDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 
     private var records: [AppDailyTrafficRecord] = []
     private let lock = NSLock()
@@ -111,10 +121,7 @@ final class ProcessTrafficStorage {
         lock.lock()
         defer { lock.unlock() }
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let todayStr = formatter.string(from: Date())
-
+        let todayStr = Self.todayDateFormatter.string(from: Date())
         return records.filter { $0.id.hasSuffix(todayStr) }
     }
 
@@ -176,9 +183,7 @@ final class ProcessTrafficStorage {
 
     func clearTodayRecords() {
         lock.lock()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let todayStr = formatter.string(from: Date())
+        let todayStr = Self.todayDateFormatter.string(from: Date())
         records.removeAll { $0.id.hasSuffix(todayStr) }
         isDirty = true
         lock.unlock()

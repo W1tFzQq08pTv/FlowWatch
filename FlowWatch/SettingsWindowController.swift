@@ -1,10 +1,19 @@
 import AppKit
 import SwiftUI
 
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let shared = SettingsWindowController()
 
     private init() {
+        super.init(window: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    private func makeWindow() -> NSWindow {
         let hostingController = NSHostingController(
             rootView: LocalizedRootView { SettingsView() }
                 .environmentObject(LocalizationManager.shared)
@@ -14,15 +23,14 @@ final class SettingsWindowController: NSWindowController {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 520, height: 620))
-        super.init(window: window)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
+        window.delegate = self
+        return window
     }
 
     func show() {
+        if window == nil {
+            self.window = makeWindow()
+        }
         window?.title = LocalizationManager.shared.t("settings.title")
         NSApp.activate(ignoringOtherApps: true)
         window?.center()
@@ -30,5 +38,10 @@ final class SettingsWindowController: NSWindowController {
         DispatchQueue.main.async { [weak self] in
             self?.window?.makeFirstResponder(nil)
         }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        window?.contentViewController = nil
+        window = nil
     }
 }
