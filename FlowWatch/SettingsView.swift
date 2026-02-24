@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage("update.autoCheckEnabled") private var autoCheckEnabled: Bool = true
     @AppStorage("perAppMonitoring.enabled") private var perAppMonitoringEnabled: Bool = false
     @AppStorage("perAppMonitoring.sampleInterval") private var perAppSampleInterval: Double = 3.0
+    @AppStorage("statusBar.smoothTransition") private var smoothTransition: Bool = false
     @AppStorage("logging.enabled") private var loggingEnabled: Bool = true
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var isShowingResetAlert = false
@@ -55,6 +56,11 @@ struct SettingsView: View {
                         .frame(width: 220, alignment: .trailing)
                     }
                     .frame(maxWidth: .infinity)
+
+                    Toggle(l10n.t("settings.smoothTransition.toggle"), isOn: $smoothTransition)
+                    Text(l10n.t("settings.smoothTransition.desc"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
