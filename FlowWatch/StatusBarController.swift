@@ -556,7 +556,7 @@ final class StatusBarController: NSObject, ObservableObject {
 
         guard animationTimer == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(66))
+        timer.schedule(deadline: .now(), repeating: .milliseconds(100))
         timer.setEventHandler { [weak self] in
             self?.animationTick()
         }
