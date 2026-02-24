@@ -8,6 +8,7 @@ final class StatusBarController: NSObject, ObservableObject {
     private let displayModeKey = "statusBarDisplayMode"
     private let maxColorRateKey = "maxColorRateMbps"
     private let colorRatePercentKey = "colorRatePercent"
+    private let smoothTransitionKey = "statusBarSmoothTransition"
     private let monitor: NetworkUsageMonitor
     private let processMonitor: ProcessNetworkMonitor
     private let statusItem: NSStatusItem
@@ -114,12 +115,31 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     private func bindUserDefaults() {
-        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateStatusButtonContent()
-            }
-            .store(in: &cancellables)
+        let defaults = UserDefaults.standard
+        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey]
+        for key in keys {
+            defaults.addObserver(self, forKeyPath: key, options: [.new, .old], context: nil)
+        }
+    }
+
+    override nonisolated func observeValue(
+        forKeyPath keyPath: String?,
+        of object: Any?,
+        change: [NSKeyValueChangeKey: Any]?,
+        context: UnsafeMutableRawPointer?
+    ) {
+        guard let keyPath = keyPath else {
+            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+            return
+        }
+        let watchedKeys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey]
+        guard watchedKeys.contains(keyPath) else {
+            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+            return
+        }
+        Task { @MainActor [weak self] in
+            self?.updateStatusButtonContent()
+        }
     }
 
     private func bindNotifications() {
@@ -641,5 +661,13 @@ final class StatusBarController: NSObject, ObservableObject {
         menu = newMenu
         statusItem.menu = menu
         refreshUpdateMenuItem()
+    }
+
+    deinit {
+        let defaults = UserDefaults.standard
+        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey]
+        for key in keys {
+            defaults.removeObserver(self, forKeyPath: key)
+        }
     }
 }
