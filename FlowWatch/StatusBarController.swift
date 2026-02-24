@@ -37,7 +37,6 @@ final class StatusBarController: NSObject, ObservableObject {
             updateStatusButtonContent()
         }
     }
-    private let smoothTransitionKey = "statusBar.smoothTransition"
 
     // 插值动画状态
     private var displayedDownloadBps: Double = 0
