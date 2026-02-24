@@ -193,5 +193,8 @@
 "perApp.summary.totalDownload" = "Total Download";
 "perApp.summary.totalUpload" = "Total Upload";
 
+"settings.statusBar.interval" = "Sample interval";
+"settings.statusBar.interval.value" = "%d s";
+
 "settings.smoothTransition.toggle" = "Smooth transition";
 "settings.smoothTransition.desc" = "Speed numbers transition smoothly instead of jumping instantly.";

@@ -30,7 +30,6 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             statusBarDisplayControls
-            samplingControls
             speedGrid
             Spacer()
             footerButtons
@@ -87,23 +86,6 @@ struct ContentView: View {
             GridRow {
                 statCard(title: l10n.t("daily.download"), value: monitor.formattedSpeed(monitor.downloadBps), color: gradientColor(for: monitor.downloadBps), systemName: "arrow.down.circle.fill")
                 statCard(title: l10n.t("daily.upload"), value: monitor.formattedSpeed(monitor.uploadBps), color: gradientColor(for: monitor.uploadBps), systemName: "arrow.up.circle.fill")
-            }
-        }
-    }
-
-    private var samplingControls: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(l10n.t("content.sampleInterval"))
-                .font(.caption)
-                .foregroundColor(.secondary)
-            HStack(spacing: 12) {
-                Slider(value: Binding(
-                    get: { monitor.sampleInterval },
-                    set: { monitor.updateInterval(to: $0) }
-                ), in: 1...10, step: 1)
-                .frame(maxWidth: 220)
-                Text(String(format: l10n.t("content.sampleInterval.value"), "\(Int(monitor.sampleInterval))"))
-                    .font(.subheadline.monospacedDigit())
             }
         }
     }

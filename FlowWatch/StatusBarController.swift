@@ -208,10 +208,21 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
                 self.processMonitor.updateInterval(interval)
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .flowWatchSampleIntervalChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let interval = UserDefaults.standard.double(forKey: "statusBar.sampleInterval")
+                self.monitor.updateInterval(to: interval)
+            }
+            .store(in: &cancellables)
     }
 
     private func bindProcessMonitor() {
         processMonitor.$isEnabled
+            .removeDuplicates()
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.rebuildMenu()
@@ -228,13 +239,16 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             .store(in: &cancellables)
     }
 
+    /// 颜色量化步长（256 KB/s），对应 100 Mbps 上限约 50 级可辨色阶
+    private let colorQuantStep: Double = 256_000
+
     private func currentRenderKey() -> String {
         let downSpeed = monitor.fixedWidthCompactSpeed(displayedDownloadBps)
         let upSpeed = monitor.fixedWidthCompactSpeed(displayedUploadBps)
         let downTotal = monitor.fixedWidthDataAmount(UInt64(displayedTodayDownloaded))
         let upTotal = monitor.fixedWidthDataAmount(UInt64(displayedTodayUploaded))
-        let downColor = Int(displayedDownloadBps / 1024)
-        let upColor = Int(displayedUploadBps / 1024)
+        let downColor = Int(displayedDownloadBps / colorQuantStep)
+        let upColor = Int(displayedUploadBps / colorQuantStep)
         return "\(displayMode.rawValue)|\(downSpeed)|\(upSpeed)|\(downTotal)|\(upTotal)|\(downColor)|\(upColor)"
     }
 
@@ -244,8 +258,6 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         lastRenderedKey = key
 
         guard let button = statusItem.button else { return }
-        button.image = nil
-        button.imagePosition = .imageOnly
 
         switch displayMode {
         case .speed:
@@ -604,7 +616,24 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
         if progress >= 1.0 {
             stopAnimation()
+        } else if currentRenderKey() == targetRenderKey() {
+            // 格式化输出已收敛到目标值，提前终止动画
+            displayedDownloadBps = targetDownloadBps
+            displayedUploadBps = targetUploadBps
+            displayedTodayDownloaded = targetTodayDownloaded
+            displayedTodayUploaded = targetTodayUploaded
+            stopAnimation()
         }
+    }
+
+    private func targetRenderKey() -> String {
+        let downSpeed = monitor.fixedWidthCompactSpeed(targetDownloadBps)
+        let upSpeed = monitor.fixedWidthCompactSpeed(targetUploadBps)
+        let downTotal = monitor.fixedWidthDataAmount(UInt64(targetTodayDownloaded))
+        let upTotal = monitor.fixedWidthDataAmount(UInt64(targetTodayUploaded))
+        let downColor = Int(targetDownloadBps / colorQuantStep)
+        let upColor = Int(targetUploadBps / colorQuantStep)
+        return "\(displayMode.rawValue)|\(downSpeed)|\(upSpeed)|\(downTotal)|\(upTotal)|\(downColor)|\(upColor)"
     }
 
     private func stopAnimation() {
