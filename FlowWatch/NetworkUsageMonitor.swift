@@ -288,21 +288,17 @@ final class NetworkUsageMonitor: ObservableObject {
         self.dayChangeTimer = timer
     }
 
-    private static let dayChangeDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
     private func checkAndSaveForDayChange() {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let lastRecorded = calendar.startOfDay(for: lastRecordedDate)
 
         if today > lastRecorded {
-            // 新的一天开始了，保存昨天的数据
-            let formatter = Self.dayChangeDateFormatter
-            LogManager.shared.log("Day changed: \(formatter.string(from: lastRecordedDate)) -> \(formatter.string(from: Date())), saving download=\(todayDownloaded), upload=\(todayUploaded)")
+            // 新的一天开始了，先将最新数据写入存储再落盘
+            let lastDateId = DailyTrafficRecord.dateId(from: lastRecordedDate)
+            let todayDateId = DailyTrafficRecord.dateId(from: Date())
+            LogManager.shared.log("Day changed: \(lastDateId) -> \(todayDateId), saving download=\(todayDownloaded), upload=\(todayUploaded)")
+            DailyTrafficStorage.shared.updateTodayRecord(downloadBytes: todayDownloaded, uploadBytes: todayUploaded)
             DailyTrafficStorage.shared.forceSave()
 
             // 重置今日流量

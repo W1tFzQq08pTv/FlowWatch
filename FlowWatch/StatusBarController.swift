@@ -59,7 +59,10 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private var smoothTransitionEnabled: Bool {
-        UserDefaults.standard.bool(forKey: smoothTransitionKey)
+        if UserDefaults.standard.object(forKey: smoothTransitionKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: smoothTransitionKey)
     }
 
     private let cachedWhite = NSColor.white.usingColorSpace(.sRGB) ?? .white
@@ -615,7 +618,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private func rebuildMenu() {
         let newMenu = NSMenu()
-        if let existing = dailyTrafficMenuItem {
+        if let existing = dailyTrafficMenuItem, menu.index(of: existing) != -1 {
             menu.removeItem(existing)
             newMenu.addItem(existing)
         } else {

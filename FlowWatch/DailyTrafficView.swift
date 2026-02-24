@@ -675,12 +675,6 @@ final class DailyTrafficViewModel: ObservableObject {
         return f
     }()
 
-    private static let idFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
-
     private var allRecords: [DailyTrafficRecord] {
         storage.getAllRecords()
     }
@@ -768,9 +762,8 @@ final class DailyTrafficViewModel: ObservableObject {
         var items: [DailyTrafficItem] = []
         let storedRecords = allRecords
         let dayLabelFmt = Self.dayLabelFormatter
-        let idFmt = Self.idFormatter
 
-        let todayId = idFmt.string(from: Date())
+        let todayId = DailyTrafficRecord.dateId(from: Date())
         let todayDate = today
         if let todayRecord = storedRecords.first(where: { $0.id == todayId }) {
             let downloadMB = Double(todayRecord.downloadBytes) / (1024 * 1024)
@@ -783,7 +776,7 @@ final class DailyTrafficViewModel: ObservableObject {
         for dayOffset in 1..<7 {
             guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
             let dayLabel = dayLabelFmt.string(from: date)
-            let recordId = idFmt.string(from: date)
+            let recordId = DailyTrafficRecord.dateId(from: date)
 
             if let record = storedRecords.first(where: { $0.id == recordId }) {
                 let downloadMB = Double(record.downloadBytes) / (1024 * 1024)

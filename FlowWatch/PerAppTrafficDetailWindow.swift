@@ -111,7 +111,7 @@ final class PerAppTrafficViewModel: ObservableObject {
 final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDelegate {
     static let shared = PerAppTrafficDetailWindowController()
 
-    private static let detailViewModel = PerAppTrafficViewModel()
+    private var detailViewModel: PerAppTrafficViewModel?
 
     private init() {
         super.init(window: nil)
@@ -126,7 +126,7 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
         let hostingController = NSHostingController(
             rootView: LocalizedRootView { PerAppTrafficDetailView() }
                 .environmentObject(LocalizationManager.shared)
-                .environmentObject(Self.detailViewModel)
+                .environmentObject(detailViewModel!)
         )
         let window = NSWindow(contentViewController: hostingController)
         window.title = LocalizationManager.shared.t("perApp.detail.title")
@@ -138,7 +138,10 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
     }
 
     func bindMonitor(_ monitor: ProcessNetworkMonitor) {
-        Self.detailViewModel.bind(to: monitor)
+        if detailViewModel == nil {
+            detailViewModel = PerAppTrafficViewModel()
+        }
+        detailViewModel!.bind(to: monitor)
     }
 
     func show() {
