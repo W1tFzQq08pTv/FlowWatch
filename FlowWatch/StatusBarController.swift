@@ -194,7 +194,9 @@ final class StatusBarController: NSObject, ObservableObject {
         let upSpeed = monitor.fixedWidthCompactSpeed(displayedUploadBps)
         let downTotal = monitor.fixedWidthDataAmount(UInt64(displayedTodayDownloaded))
         let upTotal = monitor.fixedWidthDataAmount(UInt64(displayedTodayUploaded))
-        return "\(displayMode.rawValue)|\(downSpeed)|\(upSpeed)|\(downTotal)|\(upTotal)"
+        let downColor = Int(displayedDownloadBps / 1024)
+        let upColor = Int(displayedUploadBps / 1024)
+        return "\(displayMode.rawValue)|\(downSpeed)|\(upSpeed)|\(downTotal)|\(upTotal)|\(downColor)|\(upColor)"
     }
 
     private func updateStatusButtonContent() {
