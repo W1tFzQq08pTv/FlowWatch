@@ -7,7 +7,7 @@ final class StatusBarController: NSObject, ObservableObject {
     private let displayModeKey = "statusBarDisplayMode"
     private let maxColorRateKey = "maxColorRateMbps"
     private let colorRatePercentKey = "colorRatePercent"
-    private let smoothTransitionKey = "statusBar.smoothTransition"
+    private let smoothTransitionKey = "statusBarSmoothTransition"
     private let monitor: NetworkUsageMonitor
     private let processMonitor: ProcessNetworkMonitor
     private let statusItem: NSStatusItem
