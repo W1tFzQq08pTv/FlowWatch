@@ -9,7 +9,7 @@ struct SettingsView: View {
     @AppStorage("update.autoCheckEnabled") private var autoCheckEnabled: Bool = true
     @AppStorage("perAppMonitoring.enabled") private var perAppMonitoringEnabled: Bool = false
     @AppStorage("perAppMonitoring.sampleInterval") private var perAppSampleInterval: Double = 3.0
-    @AppStorage("statusBarSmoothTransition") private var smoothTransition: Bool = false
+    @AppStorage("statusBarSmoothTransition") private var smoothTransition: Bool = true
     @AppStorage("logging.enabled") private var loggingEnabled: Bool = true
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var isShowingResetAlert = false

@@ -8,13 +8,16 @@ struct AppDailyTrafficRecord: Codable, Identifiable {
     var downloadBytes: UInt64
     var uploadBytes: UInt64
 
+    static func dateId(from date: Date) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
+    }
+
     init(bundleID: String, displayName: String, date: Date = Date(), downloadBytes: UInt64 = 0, uploadBytes: UInt64 = 0) {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         self.date = calendar.date(from: components) ?? date
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let dateStr = formatter.string(from: self.date)
+        let dateStr = AppDailyTrafficRecord.dateId(from: self.date)
         self.id = "\(bundleID)|\(dateStr)"
         self.bundleID = bundleID
         self.displayName = displayName
@@ -111,10 +114,7 @@ final class ProcessTrafficStorage {
         lock.lock()
         defer { lock.unlock() }
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let todayStr = formatter.string(from: Date())
-
+        let todayStr = AppDailyTrafficRecord.dateId(from: Date())
         return records.filter { $0.id.hasSuffix(todayStr) }
     }
 
@@ -176,9 +176,7 @@ final class ProcessTrafficStorage {
 
     func clearTodayRecords() {
         lock.lock()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let todayStr = formatter.string(from: Date())
+        let todayStr = AppDailyTrafficRecord.dateId(from: Date())
         records.removeAll { $0.id.hasSuffix(todayStr) }
         isDirty = true
         lock.unlock()

@@ -667,6 +667,13 @@ final class DailyTrafficViewModel: ObservableObject {
 
     private var updateTimer: Timer?
     private let storage: DailyTrafficStorage
+    private var menuObservers: [NSObjectProtocol] = []
+
+    private static let dayLabelFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd"
+        return f
+    }()
 
     private var allRecords: [DailyTrafficRecord] {
         storage.getAllRecords()
@@ -714,18 +721,39 @@ final class DailyTrafficViewModel: ObservableObject {
 
     init(storage: DailyTrafficStorage = .shared) {
         self.storage = storage
-        loadData() // 立即加载初始数据，避免等待定时器第一次触发造成的渲染延迟
-        startUpdateTimer()
+        loadData()
+
+        let openObserver = NotificationCenter.default.addObserver(
+            forName: .flowWatchMenuWillOpen, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.loadData()
+            self?.startUpdateTimer()
+        }
+        let closeObserver = NotificationCenter.default.addObserver(
+            forName: .flowWatchMenuDidClose, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.stopUpdateTimer()
+        }
+        menuObservers = [openObserver, closeObserver]
     }
 
     deinit {
         updateTimer?.invalidate()
+        for observer in menuObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     private func startUpdateTimer() {
+        guard updateTimer == nil else { return }
         updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.loadData()
         }
+    }
+
+    private func stopUpdateTimer() {
+        updateTimer?.invalidate()
+        updateTimer = nil
     }
 
     private func loadData() {
@@ -733,35 +761,22 @@ final class DailyTrafficViewModel: ObservableObject {
         let today = calendar.startOfDay(for: Date())
         var items: [DailyTrafficItem] = []
         let storedRecords = allRecords
-        let todayFormatter = DateFormatter()
-        todayFormatter.dateFormat = "MM/dd"
+        let dayLabelFmt = Self.dayLabelFormatter
 
-        // 今日数据
-        let todayId = {
-            let f = DateFormatter()
-            f.dateFormat = "yyyy-MM-dd"
-            return f.string(from: Date())
-        }()
-
-        let todayDate = calendar.startOfDay(for: Date())
+        let todayId = DailyTrafficRecord.dateId(from: Date())
+        let todayDate = today
         if let todayRecord = storedRecords.first(where: { $0.id == todayId }) {
             let downloadMB = Double(todayRecord.downloadBytes) / (1024 * 1024)
             let uploadMB = Double(todayRecord.uploadBytes) / (1024 * 1024)
-            items.append(DailyTrafficItem(date: todayDate, dayLabel: todayFormatter.string(from: todayDate), downloadMB: downloadMB, uploadMB: uploadMB))
+            items.append(DailyTrafficItem(date: todayDate, dayLabel: dayLabelFmt.string(from: todayDate), downloadMB: downloadMB, uploadMB: uploadMB))
         } else {
-            items.append(DailyTrafficItem(date: todayDate, dayLabel: todayFormatter.string(from: todayDate), downloadMB: 0, uploadMB: 0))
+            items.append(DailyTrafficItem(date: todayDate, dayLabel: dayLabelFmt.string(from: todayDate), downloadMB: 0, uploadMB: 0))
         }
 
-        // 历史数据
         for dayOffset in 1..<7 {
             guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
-            let dayLabel = todayFormatter.string(from: date)
-
-            let recordId = {
-                let f = DateFormatter()
-                f.dateFormat = "yyyy-MM-dd"
-                return f.string(from: date)
-            }()
+            let dayLabel = dayLabelFmt.string(from: date)
+            let recordId = DailyTrafficRecord.dateId(from: date)
 
             if let record = storedRecords.first(where: { $0.id == recordId }) {
                 let downloadMB = Double(record.downloadBytes) / (1024 * 1024)
@@ -772,7 +787,6 @@ final class DailyTrafficViewModel: ObservableObject {
             }
         }
 
-        // 按日期排序
         items.sort { $0.date < $1.date }
 
         DispatchQueue.main.async { [weak self] in

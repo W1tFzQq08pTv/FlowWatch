@@ -4,7 +4,7 @@ import Combine
 import QuartzCore
 
 @MainActor
-final class StatusBarController: NSObject, ObservableObject {
+final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private let displayModeKey = "statusBarDisplayMode"
     private let maxColorRateKey = "maxColorRateMbps"
     private let colorRatePercentKey = "colorRatePercent"
@@ -59,8 +59,26 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     private var smoothTransitionEnabled: Bool {
-        UserDefaults.standard.bool(forKey: smoothTransitionKey)
+        if UserDefaults.standard.object(forKey: smoothTransitionKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: smoothTransitionKey)
     }
+
+    private let cachedWhite = NSColor.white.usingColorSpace(.sRGB) ?? .white
+    private let cachedYellow = NSColor.systemYellow.usingColorSpace(.sRGB) ?? .systemYellow
+    private let cachedRed = NSColor.systemRed.usingColorSpace(.sRGB) ?? .systemRed
+
+    private let cachedBadgeFont = NSFont.monospacedSystemFont(ofSize: 6.5, weight: .semibold)
+    private let cachedFallbackFont = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+    private let cachedParagraphStyle: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        style.lineSpacing = -3
+        return style.copy() as! NSParagraphStyle
+    }()
+
+    private var dailyTrafficMenuItem: NSMenuItem?
 
     private var cancellables = Set<AnyCancellable>()
     private var menu: NSMenu = NSMenu()
@@ -86,6 +104,7 @@ final class StatusBarController: NSObject, ObservableObject {
         guard let button = statusItem.button else { return }
         rebuildMenu()
         statusItem.menu = menu
+        menu.delegate = self
         button.imagePosition = .imageOnly
         button.focusRingType = .none
     }
@@ -93,7 +112,7 @@ final class StatusBarController: NSObject, ObservableObject {
     private func bindMonitor() {
         Publishers.CombineLatest4(monitor.$downloadBps, monitor.$uploadBps,
                                   monitor.$todayDownloaded, monitor.$todayUploaded)
-            .receive(on: DispatchQueue.main)
+            .throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] down, up, todayDown, todayUp in
                 guard let self else { return }
                 let todayDownD = Double(todayDown)
@@ -159,6 +178,7 @@ final class StatusBarController: NSObject, ObservableObject {
         NotificationCenter.default.publisher(for: .flowWatchLanguageChanged)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
+                self?.dailyTrafficMenuItem = nil
                 self?.rebuildMenu()
             }
             .store(in: &cancellables)
@@ -242,34 +262,24 @@ final class StatusBarController: NSObject, ObservableObject {
         let percent = max(0, min(colorRatePercent, 100))
         let maxRate = max(0, maxColorRateMbps) * percent / 100
         guard maxRate > 0 else {
-            return normalizedColor(.white)
+            return cachedWhite
         }
         let ratio = max(0, min(mbps / maxRate, 1))
 
-        let start = normalizedColor(.white)
-        let mid = normalizedColor(.systemYellow)
-        let end = normalizedColor(.systemRed)
-
         if ratio < 0.5 {
-            return interpolateColor(from: start, to: mid, t: ratio / 0.5)
+            return interpolateColor(from: cachedWhite, to: cachedYellow, t: ratio / 0.5)
         } else {
-            return interpolateColor(from: mid, to: end, t: (ratio - 0.5) / 0.5)
+            return interpolateColor(from: cachedYellow, to: cachedRed, t: (ratio - 0.5) / 0.5)
         }
-    }
-
-    private func normalizedColor(_ color: NSColor) -> NSColor {
-        color.usingColorSpace(.sRGB) ?? color
     }
 
     private func interpolateColor(from start: NSColor, to end: NSColor, t: Double) -> NSColor {
         let clampedT = CGFloat(max(0, min(1, t)))
-        let startColor = normalizedColor(start)
-        let endColor = normalizedColor(end)
 
-        let red = startColor.redComponent + (endColor.redComponent - startColor.redComponent) * clampedT
-        let green = startColor.greenComponent + (endColor.greenComponent - startColor.greenComponent) * clampedT
-        let blue = startColor.blueComponent + (endColor.blueComponent - startColor.blueComponent) * clampedT
-        let alpha = startColor.alphaComponent + (endColor.alphaComponent - startColor.alphaComponent) * clampedT
+        let red = start.redComponent + (end.redComponent - start.redComponent) * clampedT
+        let green = start.greenComponent + (end.greenComponent - start.greenComponent) * clampedT
+        let blue = start.blueComponent + (end.blueComponent - start.blueComponent) * clampedT
+        let alpha = start.alphaComponent + (end.alphaComponent - start.alphaComponent) * clampedT
 
         return NSColor(red: red, green: green, blue: blue, alpha: alpha)
     }
@@ -281,13 +291,9 @@ final class StatusBarController: NSObject, ObservableObject {
         let downLine = "\(down)↓"
         let text = "\(upLine)\n\(downLine)"
 
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.lineSpacing = -3
-
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 6.5, weight: .semibold),
-            .paragraphStyle: paragraph
+            .font: cachedBadgeFont,
+            .paragraphStyle: cachedParagraphStyle
         ]
 
         let attr = NSMutableAttributedString(string: text, attributes: attributes)
@@ -297,16 +303,14 @@ final class StatusBarController: NSObject, ObservableObject {
         attr.addAttribute(.foregroundColor, value: colorForSpeed(displayedDownloadBps), range: NSRange(location: upLength + 1, length: downLength))
 
         let size = attr.size()
-        let canvas = NSImage(size: NSSize(width: max(42, size.width), height: max(13, size.height)))
-
-        canvas.lockFocus()
-        attr.draw(at: NSPoint(
-            x: (canvas.size.width - size.width) / 2,
-            y: (canvas.size.height - size.height) / 2
-        ))
-        canvas.unlockFocus()
-        canvas.isTemplate = false
-        return canvas
+        let canvasSize = NSSize(width: max(42, size.width), height: max(13, size.height))
+        return NSImage(size: canvasSize, flipped: false) { _ in
+            attr.draw(at: NSPoint(
+                x: (canvasSize.width - size.width) / 2,
+                y: (canvasSize.height - size.height) / 2
+            ))
+            return true
+        }
     }
 
     private func makeTotalBadgeImage() -> NSImage? {
@@ -316,13 +320,9 @@ final class StatusBarController: NSObject, ObservableObject {
         let downLine = "\(down)↓"
         let text = "\(upLine)\n\(downLine)"
 
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.lineSpacing = -3
-
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 6.5, weight: .semibold),
-            .paragraphStyle: paragraph,
+            .font: cachedBadgeFont,
+            .paragraphStyle: cachedParagraphStyle,
             .foregroundColor: NSColor.white
         ]
 
@@ -332,16 +332,14 @@ final class StatusBarController: NSObject, ObservableObject {
         attr.addAttribute(.foregroundColor, value: colorForSpeed(displayedUploadBps), range: NSRange(location: 0, length: upLength))
         attr.addAttribute(.foregroundColor, value: colorForSpeed(displayedDownloadBps), range: NSRange(location: upLength + 1, length: downLength))
         let size = attr.size()
-        let canvas = NSImage(size: NSSize(width: max(46, size.width), height: max(14, size.height)))
-
-        canvas.lockFocus()
-        attr.draw(at: NSPoint(
-            x: (canvas.size.width - size.width) / 2,
-            y: (canvas.size.height - size.height) / 2
-        ))
-        canvas.unlockFocus()
-        canvas.isTemplate = false
-        return canvas
+        let canvasSize = NSSize(width: max(46, size.width), height: max(14, size.height))
+        return NSImage(size: canvasSize, flipped: false) { _ in
+            attr.draw(at: NSPoint(
+                x: (canvasSize.width - size.width) / 2,
+                y: (canvasSize.height - size.height) / 2
+            ))
+            return true
+        }
     }
 
     private func makeCombinedBadgeImage() -> NSImage? {
@@ -350,31 +348,19 @@ final class StatusBarController: NSObject, ObservableObject {
         let speedUp = monitor.fixedWidthCompactSpeed(displayedUploadBps) + "↑"
         let speedDown = monitor.fixedWidthCompactSpeed(displayedDownloadBps) + "↓"
 
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.lineSpacing = -3
-        let font = NSFont.monospacedSystemFont(ofSize: 6.5, weight: .semibold)
+        let baseAttrs: [NSAttributedString.Key: Any] = [
+            .font: cachedBadgeFont,
+            .paragraphStyle: cachedParagraphStyle
+        ]
 
         let totalsText = "\(totalsUp)\n\(totalsDown)"
-        let totalsAttr = NSMutableAttributedString(
-            string: totalsText,
-            attributes: [
-                .font: font,
-                .paragraphStyle: paragraph
-            ]
-        )
+        let totalsAttr = NSMutableAttributedString(string: totalsText, attributes: baseAttrs)
         let totalsUpLength = (totalsUp as NSString).length
         totalsAttr.addAttribute(.foregroundColor, value: colorForSpeed(displayedUploadBps), range: NSRange(location: 0, length: totalsUpLength))
         totalsAttr.addAttribute(.foregroundColor, value: colorForSpeed(displayedDownloadBps), range: NSRange(location: totalsUpLength + 1, length: (totalsDown as NSString).length))
 
         let speedText = "\(speedUp)\n\(speedDown)"
-        let speedAttr = NSMutableAttributedString(
-            string: speedText,
-            attributes: [
-                .font: font,
-                .paragraphStyle: paragraph
-            ]
-        )
+        let speedAttr = NSMutableAttributedString(string: speedText, attributes: baseAttrs)
         let upLength = (speedUp as NSString).length
         speedAttr.addAttribute(.foregroundColor, value: colorForSpeed(displayedUploadBps), range: NSRange(location: 0, length: upLength))
         speedAttr.addAttribute(.foregroundColor, value: colorForSpeed(displayedDownloadBps), range: NSRange(location: upLength + 1, length: (speedDown as NSString).length))
@@ -384,19 +370,17 @@ final class StatusBarController: NSObject, ObservableObject {
         let speedSize = speedAttr.size()
         let canvasSize = NSSize(width: max(52, totalSize.width) + spacer + max(52, speedSize.width),
                                 height: max(max(14, totalSize.height), max(14, speedSize.height)))
-        let canvas = NSImage(size: canvasSize)
-        canvas.lockFocus()
-        totalsAttr.draw(at: NSPoint(
-            x: 0,
-            y: (canvasSize.height - totalSize.height) / 2
-        ))
-        speedAttr.draw(at: NSPoint(
-            x: max(52, totalSize.width) + spacer,
-            y: (canvasSize.height - speedSize.height) / 2
-        ))
-        canvas.unlockFocus()
-        canvas.isTemplate = false
-        return canvas
+        return NSImage(size: canvasSize, flipped: false) { _ in
+            totalsAttr.draw(at: NSPoint(
+                x: 0,
+                y: (canvasSize.height - totalSize.height) / 2
+            ))
+            speedAttr.draw(at: NSPoint(
+                x: max(52, totalSize.width) + spacer,
+                y: (canvasSize.height - speedSize.height) / 2
+            ))
+            return true
+        }
     }
 
     private func renderSpeedOnly(into button: NSStatusBarButton) {
@@ -410,7 +394,7 @@ final class StatusBarController: NSObject, ObservableObject {
             let downLine = "\(down)↓"
             let text = upLine + " " + downLine
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+                .font: cachedFallbackFont
             ]
             let attr = NSMutableAttributedString(string: text, attributes: attributes)
             let upLength = (upLine as NSString).length
@@ -634,7 +618,14 @@ final class StatusBarController: NSObject, ObservableObject {
 
     private func rebuildMenu() {
         let newMenu = NSMenu()
-        newMenu.addItem(makeDailyTrafficMenuItem())
+        if let existing = dailyTrafficMenuItem, menu.index(of: existing) != -1 {
+            menu.removeItem(existing)
+            newMenu.addItem(existing)
+        } else {
+            let item = makeDailyTrafficMenuItem()
+            dailyTrafficMenuItem = item
+            newMenu.addItem(item)
+        }
         newMenu.addItem(.separator())
         if processMonitor.isEnabled {
             let perAppItem = NSMenuItem(title: LocalizationManager.shared.t("menu.perAppTraffic"), action: #selector(openPerAppDetail), keyEquivalent: "")
@@ -658,8 +649,19 @@ final class StatusBarController: NSObject, ObservableObject {
         quitItem.target = self
         newMenu.addItem(quitItem)
         menu = newMenu
+        menu.delegate = self
         statusItem.menu = menu
         refreshUpdateMenuItem()
+    }
+
+    // MARK: - NSMenuDelegate
+
+    nonisolated func menuWillOpen(_ menu: NSMenu) {
+        NotificationCenter.default.post(name: .flowWatchMenuWillOpen, object: nil)
+    }
+
+    nonisolated func menuDidClose(_ menu: NSMenu) {
+        NotificationCenter.default.post(name: .flowWatchMenuDidClose, object: nil)
     }
 
     deinit {
