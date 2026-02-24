@@ -53,7 +53,9 @@ final class StatusBarController: NSObject, ObservableObject {
     private var targetTodayUploaded: Double = 0
     private var animationTimer: DispatchSourceTimer?
     private var animationStartTime: CFTimeInterval = 0
-    private let animationDuration: CFTimeInterval = 0.5
+    private var animationDuration: CFTimeInterval {
+        monitor.sampleInterval
+    }
 
     private var smoothTransitionEnabled: Bool {
         UserDefaults.standard.bool(forKey: smoothTransitionKey)
