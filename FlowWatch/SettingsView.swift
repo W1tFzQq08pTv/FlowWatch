@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage("update.autoCheckEnabled") private var autoCheckEnabled: Bool = true
     @AppStorage("perAppMonitoring.enabled") private var perAppMonitoringEnabled: Bool = false
     @AppStorage("perAppMonitoring.sampleInterval") private var perAppSampleInterval: Double = 3.0
+    @AppStorage("statusBar.sampleInterval") private var sampleInterval: Double = 5.0
     @AppStorage("statusBarSmoothTransition") private var smoothTransition: Bool = true
     @AppStorage("logging.enabled") private var loggingEnabled: Bool = true
     @ObservedObject private var updateManager = UpdateManager.shared
@@ -22,8 +23,6 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            header
-            
             GroupBox {
                 HStack {
                     Text(l10n.t("settings.language"))
@@ -37,9 +36,8 @@ struct SettingsView: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 220, alignment: .trailing)
+                    .fixedSize()
                 }
-                .frame(maxWidth: .infinity)
             }
 
             GroupBox {
@@ -53,14 +51,37 @@ struct SettingsView: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 220, alignment: .trailing)
+                        .fixedSize()
                     }
-                    .frame(maxWidth: .infinity)
 
-                    Toggle(l10n.t("settings.smoothTransition.toggle"), isOn: $smoothTransition)
-                    Text(l10n.t("settings.smoothTransition.desc"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Text(l10n.t("settings.statusBar.interval"))
+                        Spacer()
+                        Picker("", selection: Binding(
+                            get: { sampleInterval },
+                            set: { newValue in
+                                sampleInterval = newValue
+                                NotificationCenter.default.post(name: .flowWatchSampleIntervalChanged, object: nil)
+                            }
+                        )) {
+                            Text(String(format: l10n.t("settings.statusBar.interval.value"), 1) + "\u{3000}\u{3000}").tag(1.0)
+                            Text(String(format: l10n.t("settings.statusBar.interval.value"), 2) + "\u{3000}\u{3000}").tag(2.0)
+                            Text(String(format: l10n.t("settings.statusBar.interval.value"), 3) + "\u{3000}\u{3000}").tag(3.0)
+                            Text(String(format: l10n.t("settings.statusBar.interval.value"), 5) + "\u{3000}\u{3000}").tag(5.0)
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+
+                    HStack {
+                        Text(l10n.t("settings.smoothTransition.toggle"))
+                        + Text("  " + l10n.t("settings.smoothTransition.desc"))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Toggle("", isOn: $smoothTransition)
+                            .labelsHidden()
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
@@ -94,37 +115,45 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Slider(value: colorRatePercentBinding, in: 0...100, step: 1)
-                        Text(l10n.t("settings.maxColorRate.desc"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
-                sectionLabel(l10n.t("settings.section.coloring"), systemImage: "paintpalette")
+                sectionLabel(l10n.t("settings.section.coloring"), systemImage: "paintpalette", hint: l10n.t("settings.maxColorRate.desc"))
             }
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
                     if #available(macOS 13.0, *) {
-                        Toggle(l10n.t("settings.launchAtLogin.toggle"), isOn: Binding(
-                            get: { launchAtLoginEnabled },
-                            set: { newValue in
-                                toggleLaunchAtLogin(to: newValue)
+                        HStack {
+                            if let status = launchAtLoginStatus,
+                               let hint = launchAtLoginHintText(for: status) {
+                                Text(l10n.t("settings.launchAtLogin.toggle"))
+                                + Text("  " + hint)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text(l10n.t("settings.launchAtLogin.toggle"))
                             }
-                        ))
-
-                        if let status = launchAtLoginStatus,
-                           let hint = launchAtLoginHintText(for: status) {
-                            Text(hint)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { launchAtLoginEnabled },
+                                set: { newValue in
+                                    toggleLaunchAtLogin(to: newValue)
+                                }
+                            ))
+                            .labelsHidden()
                         }
                     } else {
-                        Toggle(l10n.t("settings.launchAtLogin.toggle"), isOn: .constant(false))
-                            .disabled(true)
-                        Text(l10n.t("settings.requires.macos13"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        HStack {
+                            Text(l10n.t("settings.launchAtLogin.toggle"))
+                            + Text("  " + l10n.t("settings.requires.macos13"))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Toggle("", isOn: .constant(false))
+                                .labelsHidden()
+                                .disabled(true)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -134,16 +163,24 @@ struct SettingsView: View {
 
                 GroupBox {
                     VStack(alignment: .leading, spacing: 10) {
-                        Toggle(l10n.t("settings.update.autoCheck"), isOn: Binding(
-                            get: { autoCheckEnabled },
-                            set: { newValue in
-                                autoCheckEnabled = newValue
-                                LogManager.shared.log("Auto update check enabled: \(newValue)")
-                                if newValue {
-                                    NotificationCenter.default.post(name: .flowWatchCheckForUpdates, object: nil)
+                        HStack {
+                            Text(l10n.t("settings.update.autoCheck"))
+                            + Text("  " + l10n.t("settings.update.hint"))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { autoCheckEnabled },
+                                set: { newValue in
+                                    autoCheckEnabled = newValue
+                                    LogManager.shared.log("Auto update check enabled: \(newValue)")
+                                    if newValue {
+                                        NotificationCenter.default.post(name: .flowWatchCheckForUpdates, object: nil)
+                                    }
                                 }
-                            }
-                        ))
+                            ))
+                            .labelsHidden()
+                        }
                         if updateManager.status == .checking {
                             Text(l10n.t("menu.checkingUpdate"))
                                 .font(.caption)
@@ -160,9 +197,6 @@ struct SettingsView: View {
                         Text(String(format: l10n.t("settings.update.nextCheck"), formattedNextCheck()))
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text(l10n.t("settings.update.hint"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
@@ -171,16 +205,21 @@ struct SettingsView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
-                    Toggle(l10n.t("settings.logging.toggle"), isOn: Binding(
-                        get: { loggingEnabled },
-                        set: { newValue in
-                            loggingEnabled = newValue
-                            LogManager.shared.log("Logging enabled: \(newValue)")
-                        }
-                    ))
-                    Text(l10n.t("settings.logging.hint"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Text(l10n.t("settings.logging.toggle"))
+                        + Text("  " + l10n.t("settings.logging.hint"))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { loggingEnabled },
+                            set: { newValue in
+                                loggingEnabled = newValue
+                                LogManager.shared.log("Logging enabled: \(newValue)")
+                            }
+                        ))
+                        .labelsHidden()
+                    }
                     Button {
                         let url = URL(fileURLWithPath: LogManager.shared.logsDirectoryPath)
                         NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -201,16 +240,25 @@ struct SettingsView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
-                    Toggle(l10n.t("settings.perApp.toggle"), isOn: Binding(
-                        get: { perAppMonitoringEnabled },
-                        set: { newValue in
-                            perAppMonitoringEnabled = newValue
-                            LogManager.shared.log("Per-app monitoring enabled: \(newValue)")
-                            NotificationCenter.default.post(name: .flowWatchPerAppMonitoringChanged, object: nil)
-                        }
-                    ))
+                    HStack {
+                        Text(l10n.t("settings.perApp.toggle"))
+                        + Text("  " + l10n.t("settings.perApp.desc"))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { perAppMonitoringEnabled },
+                            set: { newValue in
+                                perAppMonitoringEnabled = newValue
+                                LogManager.shared.log("Per-app monitoring enabled: \(newValue)")
+                                NotificationCenter.default.post(name: .flowWatchPerAppMonitoringChanged, object: nil)
+                            }
+                        ))
+                        .labelsHidden()
+                    }
                     HStack {
                         Text(l10n.t("settings.perApp.interval"))
+                        Spacer()
                         Picker("", selection: Binding(
                             get: { perAppSampleInterval },
                             set: { newValue in
@@ -218,17 +266,14 @@ struct SettingsView: View {
                                 NotificationCenter.default.post(name: .flowWatchPerAppIntervalChanged, object: nil)
                             }
                         )) {
-                            Text(String(format: l10n.t("settings.perApp.interval.value"), 1)).tag(1.0)
-                            Text(String(format: l10n.t("settings.perApp.interval.value"), 3)).tag(3.0)
-                            Text(String(format: l10n.t("settings.perApp.interval.value"), 5)).tag(5.0)
-                            Text(String(format: l10n.t("settings.perApp.interval.value"), 10)).tag(10.0)
+                            Text(String(format: l10n.t("settings.perApp.interval.value"), 1) + "\u{3000}\u{3000}").tag(1.0)
+                            Text(String(format: l10n.t("settings.perApp.interval.value"), 3) + "\u{3000}\u{3000}").tag(3.0)
+                            Text(String(format: l10n.t("settings.perApp.interval.value"), 5) + "\u{3000}\u{3000}").tag(5.0)
+                            Text(String(format: l10n.t("settings.perApp.interval.value"), 10) + "\u{3000}\u{3000}").tag(10.0)
                         }
                         .labelsHidden()
-                        .frame(width: 80)
+                        .fixedSize()
                     }
-                    Text(l10n.t("settings.perApp.desc"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
@@ -236,7 +281,7 @@ struct SettingsView: View {
             }
 
             GroupBox {
-                VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
                     Button(l10n.t("settings.data.resetToday"), role: .destructive) {
                         resetAlertMode = .today
                         isShowingResetAlert = true
@@ -245,13 +290,10 @@ struct SettingsView: View {
                         resetAlertMode = .allHistory
                         isShowingResetAlert = true
                     }
-                    Text(l10n.t("settings.data.desc"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
-                sectionLabel(l10n.t("settings.section.data"), systemImage: "internaldrive")
+                sectionLabel(l10n.t("settings.section.data"), systemImage: "internaldrive", hint: l10n.t("settings.data.desc"))
             }
         }
         .padding(20)
@@ -296,16 +338,6 @@ struct SettingsView: View {
         } message: {
             Text(launchAtLoginErrorMessage ?? "")
         }
-    }
-
-    private var header: some View {
-        VStack(alignment: .center, spacing: 6) {
-            Text(l10n.t("settings.subtitle"))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .multilineTextAlignment(.center)
     }
 
     private enum ResetAlertMode {
@@ -387,12 +419,19 @@ struct SettingsView: View {
         }
     }
 
-    private func sectionLabel(_ title: String, systemImage: String) -> some View {
+    private func sectionLabel(_ title: String, systemImage: String, hint: String? = nil) -> some View {
         HStack(spacing: 6) {
             Image(systemName: systemImage)
-            Text(title)
+            if let hint {
+                Text(title).font(.body.bold())
+                + Text("  " + hint)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            } else {
+                Text(title)
+                    .font(.body.bold())
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func displayPath(_ path: String) -> String {

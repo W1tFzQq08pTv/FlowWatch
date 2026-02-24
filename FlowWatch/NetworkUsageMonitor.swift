@@ -17,7 +17,10 @@ final class NetworkUsageMonitor: ObservableObject {
     @Published var totalDownloaded: UInt64 = 0
     @Published var totalUploaded: UInt64 = 0
     @Published var isActive: Bool = true
-    @Published private(set) var sampleInterval: TimeInterval = 1.0
+    @Published private(set) var sampleInterval: TimeInterval = 5.0
+
+    private let sampleIntervalKey = "statusBar.sampleInterval"
+    private static let allowedIntervals: [TimeInterval] = [1, 2, 3, 5]
 
     // 每日流量统计
     @Published private(set) var todayDownloaded: UInt64 = 0
@@ -32,6 +35,10 @@ final class NetworkUsageMonitor: ObservableObject {
     private var wakeObserver: NSObjectProtocol?
 
     init() {
+        let stored = UserDefaults.standard.double(forKey: sampleIntervalKey)
+        if stored > 0 {
+            sampleInterval = Self.nearestAllowedInterval(stored)
+        }
         loadTodayTraffic()
         // 将累计流量初始化为今日已用流量
         totalDownloaded = todayDownloaded
@@ -62,11 +69,16 @@ final class NetworkUsageMonitor: ObservableObject {
     }
 
     func updateInterval(to interval: TimeInterval) {
-        let clamped = min(max(interval, 1.0), 10.0)
-        guard clamped != sampleInterval else { return }
-        LogManager.shared.log("Sample interval updated: \(sampleInterval) -> \(clamped)")
-        sampleInterval = clamped
+        let nearest = Self.nearestAllowedInterval(interval)
+        guard nearest != sampleInterval else { return }
+        LogManager.shared.log("Sample interval updated: \(sampleInterval) -> \(nearest)")
+        sampleInterval = nearest
+        UserDefaults.standard.set(nearest, forKey: sampleIntervalKey)
         restartTimer()
+    }
+
+    private static func nearestAllowedInterval(_ value: TimeInterval) -> TimeInterval {
+        allowedIntervals.min(by: { abs($0 - value) < abs($1 - value) }) ?? 1.0
     }
 
     private func restartTimer() {
@@ -108,8 +120,8 @@ final class NetworkUsageMonitor: ObservableObject {
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.downloadBps = Double(deltaRx)
-            self.uploadBps = Double(deltaTx)
+            self.downloadBps = Double(deltaRx) / self.sampleInterval
+            self.uploadBps = Double(deltaTx) / self.sampleInterval
             self.totalDownloaded &+= deltaRx
             self.totalUploaded &+= deltaTx
             self.todayDownloaded &+= deltaRx
@@ -179,7 +191,7 @@ final class NetworkUsageMonitor: ObservableObject {
         switch unit {
         case "GB/s", "MB/s":
             format = "%6.1f"
-        case "KB/s", "B/s":
+        case "KB/s":
             format = "%6.0f"
         default:
             format = "%6.1f"
@@ -213,10 +225,8 @@ final class NetworkUsageMonitor: ObservableObject {
             return (kb / (1024 * 1024), "GB/s")
         } else if kb >= 1024 {
             return (kb / 1024, "MB/s")
-        } else if kb >= 1 {
-            return (kb, "KB/s")
         } else {
-            return (safeBytes, "B/s")
+            return (kb, "KB/s")
         }
     }
 
