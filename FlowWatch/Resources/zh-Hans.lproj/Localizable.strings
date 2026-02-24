@@ -192,3 +192,6 @@
 "perApp.range.allTime" = "全部";
 "perApp.summary.totalDownload" = "总下载";
 "perApp.summary.totalUpload" = "总上传";
+
+"settings.smoothTransition.toggle" = "平滑过渡";
+"settings.smoothTransition.desc" = "开启后速率数字会平滑渐变，而非直接跳变。";

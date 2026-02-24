@@ -192,3 +192,6 @@
 "perApp.range.allTime" = "All Time";
 "perApp.summary.totalDownload" = "Total Download";
 "perApp.summary.totalUpload" = "Total Upload";
+
+"settings.smoothTransition.toggle" = "Smooth transition";
+"settings.smoothTransition.desc" = "Speed numbers transition smoothly instead of jumping instantly.";

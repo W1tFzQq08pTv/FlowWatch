@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import QuartzCore
 
 @MainActor
 final class StatusBarController: NSObject, ObservableObject {
@@ -35,6 +36,29 @@ final class StatusBarController: NSObject, ObservableObject {
             updateStatusButtonContent()
         }
     }
+    private let smoothTransitionKey = "statusBar.smoothTransition"
+
+    // 插值动画状态
+    private var displayedDownloadBps: Double = 0
+    private var displayedUploadBps: Double = 0
+    private var displayedTodayDownloaded: Double = 0
+    private var displayedTodayUploaded: Double = 0
+    private var startDownloadBps: Double = 0
+    private var startUploadBps: Double = 0
+    private var startTodayDownloaded: Double = 0
+    private var startTodayUploaded: Double = 0
+    private var targetDownloadBps: Double = 0
+    private var targetUploadBps: Double = 0
+    private var targetTodayDownloaded: Double = 0
+    private var targetTodayUploaded: Double = 0
+    private var animationTimer: DispatchSourceTimer?
+    private var animationStartTime: CFTimeInterval = 0
+    private let animationDuration: CFTimeInterval = 0.5
+
+    private var smoothTransitionEnabled: Bool {
+        UserDefaults.standard.bool(forKey: smoothTransitionKey)
+    }
+
     private var cancellables = Set<AnyCancellable>()
     private var menu: NSMenu = NSMenu()
 
@@ -64,11 +88,24 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     private func bindMonitor() {
-        monitor.$downloadBps
-            .combineLatest(monitor.$uploadBps, monitor.$todayDownloaded, monitor.$todayUploaded)
+        Publishers.CombineLatest4(monitor.$downloadBps, monitor.$uploadBps,
+                                  monitor.$todayDownloaded, monitor.$todayUploaded)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _, _, _, _ in
-                self?.updateStatusButtonContent()
+            .sink { [weak self] down, up, todayDown, todayUp in
+                guard let self else { return }
+                let todayDownD = Double(todayDown)
+                let todayUpD = Double(todayUp)
+                if self.smoothTransitionEnabled {
+                    self.startAnimation(targetDown: down, targetUp: up,
+                                        targetTodayDown: todayDownD, targetTodayUp: todayUpD)
+                } else {
+                    self.displayedDownloadBps = down
+                    self.displayedUploadBps = up
+                    self.displayedTodayDownloaded = todayDownD
+                    self.displayedTodayUploaded = todayUpD
+                    self.stopAnimation()
+                    self.updateStatusButtonContent()
+                }
             }
             .store(in: &cancellables)
     }
@@ -202,8 +239,8 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     private func makeSpeedBadgeImage() -> NSImage? {
-        let up = monitor.fixedWidthCompactSpeed(monitor.uploadBps)
-        let down = monitor.fixedWidthCompactSpeed(monitor.downloadBps)
+        let up = monitor.fixedWidthCompactSpeed(displayedUploadBps)
+        let down = monitor.fixedWidthCompactSpeed(displayedDownloadBps)
         let upLine = "\(up)↑"
         let downLine = "\(down)↓"
         let text = "\(upLine)\n\(downLine)"
@@ -220,8 +257,8 @@ final class StatusBarController: NSObject, ObservableObject {
         let attr = NSMutableAttributedString(string: text, attributes: attributes)
         let upLength = (upLine as NSString).length
         let downLength = (downLine as NSString).length
-        attr.addAttribute(.foregroundColor, value: colorForSpeed(monitor.uploadBps), range: NSRange(location: 0, length: upLength))
-        attr.addAttribute(.foregroundColor, value: colorForSpeed(monitor.downloadBps), range: NSRange(location: upLength + 1, length: downLength))
+        attr.addAttribute(.foregroundColor, value: colorForSpeed(displayedUploadBps), range: NSRange(location: 0, length: upLength))
+        attr.addAttribute(.foregroundColor, value: colorForSpeed(displayedDownloadBps), range: NSRange(location: upLength + 1, length: downLength))
 
         let size = attr.size()
         let canvas = NSImage(size: NSSize(width: max(42, size.width), height: max(13, size.height)))
@@ -237,8 +274,8 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     private func makeTotalBadgeImage() -> NSImage? {
-        let up = monitor.fixedWidthDataAmount(monitor.todayUploaded)
-        let down = monitor.fixedWidthDataAmount(monitor.todayDownloaded)
+        let up = monitor.fixedWidthDataAmount(UInt64(displayedTodayUploaded))
+        let down = monitor.fixedWidthDataAmount(UInt64(displayedTodayDownloaded))
         let upLine = "\(up)↑"
         let downLine = "\(down)↓"
         let text = "\(upLine)\n\(downLine)"
@@ -256,8 +293,8 @@ final class StatusBarController: NSObject, ObservableObject {
         let attr = NSMutableAttributedString(string: text, attributes: attributes)
         let upLength = (upLine as NSString).length
         let downLength = (downLine as NSString).length
-        attr.addAttribute(.foregroundColor, value: colorForSpeed(monitor.uploadBps), range: NSRange(location: 0, length: upLength))
-        attr.addAttribute(.foregroundColor, value: colorForSpeed(monitor.downloadBps), range: NSRange(location: upLength + 1, length: downLength))
+        attr.addAttribute(.foregroundColor, value: colorForSpeed(displayedUploadBps), range: NSRange(location: 0, length: upLength))
+        attr.addAttribute(.foregroundColor, value: colorForSpeed(displayedDownloadBps), range: NSRange(location: upLength + 1, length: downLength))
         let size = attr.size()
         let canvas = NSImage(size: NSSize(width: max(46, size.width), height: max(14, size.height)))
 
@@ -272,10 +309,10 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     private func makeCombinedBadgeImage() -> NSImage? {
-        let totalsUp = monitor.fixedWidthDataAmount(monitor.todayUploaded) + "↑"
-        let totalsDown = monitor.fixedWidthDataAmount(monitor.todayDownloaded) + "↓"
-        let speedUp = monitor.fixedWidthCompactSpeed(monitor.uploadBps) + "↑"
-        let speedDown = monitor.fixedWidthCompactSpeed(monitor.downloadBps) + "↓"
+        let totalsUp = monitor.fixedWidthDataAmount(UInt64(displayedTodayUploaded)) + "↑"
+        let totalsDown = monitor.fixedWidthDataAmount(UInt64(displayedTodayDownloaded)) + "↓"
+        let speedUp = monitor.fixedWidthCompactSpeed(displayedUploadBps) + "↑"
+        let speedDown = monitor.fixedWidthCompactSpeed(displayedDownloadBps) + "↓"
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
@@ -287,10 +324,12 @@ final class StatusBarController: NSObject, ObservableObject {
             string: totalsText,
             attributes: [
                 .font: font,
-                .paragraphStyle: paragraph,
-                .foregroundColor: NSColor.white
+                .paragraphStyle: paragraph
             ]
         )
+        let totalsUpLength = (totalsUp as NSString).length
+        totalsAttr.addAttribute(.foregroundColor, value: colorForSpeed(displayedUploadBps), range: NSRange(location: 0, length: totalsUpLength))
+        totalsAttr.addAttribute(.foregroundColor, value: colorForSpeed(displayedDownloadBps), range: NSRange(location: totalsUpLength + 1, length: (totalsDown as NSString).length))
 
         let speedText = "\(speedUp)\n\(speedDown)"
         let speedAttr = NSMutableAttributedString(
@@ -301,8 +340,8 @@ final class StatusBarController: NSObject, ObservableObject {
             ]
         )
         let upLength = (speedUp as NSString).length
-        speedAttr.addAttribute(.foregroundColor, value: colorForSpeed(monitor.uploadBps), range: NSRange(location: 0, length: upLength))
-        speedAttr.addAttribute(.foregroundColor, value: colorForSpeed(monitor.downloadBps), range: NSRange(location: upLength + 1, length: (speedDown as NSString).length))
+        speedAttr.addAttribute(.foregroundColor, value: colorForSpeed(displayedUploadBps), range: NSRange(location: 0, length: upLength))
+        speedAttr.addAttribute(.foregroundColor, value: colorForSpeed(displayedDownloadBps), range: NSRange(location: upLength + 1, length: (speedDown as NSString).length))
 
         let spacer: CGFloat = 6
         let totalSize = totalsAttr.size()
@@ -329,8 +368,8 @@ final class StatusBarController: NSObject, ObservableObject {
             button.image = image
             button.title = ""
         } else {
-            let down = monitor.fixedWidthCompactSpeed(monitor.downloadBps)
-            let up = monitor.fixedWidthCompactSpeed(monitor.uploadBps)
+            let down = monitor.fixedWidthCompactSpeed(displayedDownloadBps)
+            let up = monitor.fixedWidthCompactSpeed(displayedUploadBps)
             let upLine = "\(up)↑"
             let downLine = "\(down)↓"
             let text = upLine + " " + downLine
@@ -340,8 +379,8 @@ final class StatusBarController: NSObject, ObservableObject {
             let attr = NSMutableAttributedString(string: text, attributes: attributes)
             let upLength = (upLine as NSString).length
             let downLength = (downLine as NSString).length
-            attr.addAttribute(.foregroundColor, value: colorForSpeed(monitor.uploadBps), range: NSRange(location: 0, length: upLength))
-            attr.addAttribute(.foregroundColor, value: colorForSpeed(monitor.downloadBps), range: NSRange(location: upLength + 1, length: downLength))
+            attr.addAttribute(.foregroundColor, value: colorForSpeed(displayedUploadBps), range: NSRange(location: 0, length: upLength))
+            attr.addAttribute(.foregroundColor, value: colorForSpeed(displayedDownloadBps), range: NSRange(location: upLength + 1, length: downLength))
             button.attributedTitle = attr
         }
     }
@@ -499,6 +538,54 @@ final class StatusBarController: NSObject, ObservableObject {
     @objc private func openPerAppDetail() {
         LogManager.shared.log("Open per-app traffic detail window")
         PerAppTrafficDetailWindowController.shared.show()
+    }
+
+    private func startAnimation(targetDown: Double, targetUp: Double,
+                                targetTodayDown: Double, targetTodayUp: Double) {
+        startDownloadBps = displayedDownloadBps
+        startUploadBps = displayedUploadBps
+        startTodayDownloaded = displayedTodayDownloaded
+        startTodayUploaded = displayedTodayUploaded
+        targetDownloadBps = targetDown
+        targetUploadBps = targetUp
+        targetTodayDownloaded = targetTodayDown
+        targetTodayUploaded = targetTodayUp
+        animationStartTime = CACurrentMediaTime()
+
+        guard animationTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(66))
+        timer.setEventHandler { [weak self] in
+            self?.animationTick()
+        }
+        timer.resume()
+        animationTimer = timer
+    }
+
+    private func animationTick() {
+        let elapsed = CACurrentMediaTime() - animationStartTime
+        let progress = min(elapsed / animationDuration, 1.0)
+        let eased = easeOutCubic(progress)
+
+        displayedDownloadBps = startDownloadBps + (targetDownloadBps - startDownloadBps) * eased
+        displayedUploadBps = startUploadBps + (targetUploadBps - startUploadBps) * eased
+        displayedTodayDownloaded = startTodayDownloaded + (targetTodayDownloaded - startTodayDownloaded) * eased
+        displayedTodayUploaded = startTodayUploaded + (targetTodayUploaded - startTodayUploaded) * eased
+
+        updateStatusButtonContent()
+
+        if progress >= 1.0 {
+            stopAnimation()
+        }
+    }
+
+    private func stopAnimation() {
+        animationTimer?.cancel()
+        animationTimer = nil
+    }
+
+    private func easeOutCubic(_ t: Double) -> Double {
+        1 - pow(1 - t, 3)
     }
 
     private func rebuildMenu() {
