@@ -101,6 +101,11 @@ final class ProcessNetworkMonitor: ObservableObject {
                     level: .error
                 )
                 stop()
+                // 同步禁用状态到 UI 和持久化存储，避免 UI 显示与实际状态不一致
+                UserDefaults.standard.set(false, forKey: enabledKey)
+                DispatchQueue.main.async { [weak self] in
+                    self?.isEnabled = false
+                }
             }
             return
         }
