@@ -500,6 +500,9 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         alert.addButton(withTitle: LocalizationManager.shared.t("common.cancel"))
         alert.addButton(withTitle: LocalizationManager.shared.t("common.quit"))
 
+        // accessory 模式下需要先激活应用，否则弹窗会藏在其他窗口后面
+        NSApp.activate(ignoringOtherApps: true)
+
         let response = alert.runModal()
         if response == .alertSecondButtonReturn {
             NSApplication.shared.terminate(nil)

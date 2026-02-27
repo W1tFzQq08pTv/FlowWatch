@@ -24,7 +24,9 @@ final class ProcessNetworkMonitor: ObservableObject {
         return stored >= 1 ? stored : 3.0
     }
     private let nettopTimeout: TimeInterval = 5.0
+    private let maxConsecutiveFailures = 10
 
+    private var consecutiveFailures = 0
     private var timer: DispatchSourceTimer?
     private var lastSnapshot: [pid_t: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
     private let resolver = AppInfoResolver.shared
@@ -65,6 +67,7 @@ final class ProcessNetworkMonitor: ObservableObject {
     func start() {
         guard timer == nil else { return }
         LogManager.shared.log("ProcessNetworkMonitor started")
+        consecutiveFailures = 0
         lastSnapshot.removeAll()
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: sampleInterval)
@@ -90,7 +93,23 @@ final class ProcessNetworkMonitor: ObservableObject {
     }
 
     private func sample() {
-        guard let output = runNettop() else { return }
+        guard let output = runNettop() else {
+            consecutiveFailures += 1
+            if consecutiveFailures >= maxConsecutiveFailures {
+                LogManager.shared.log(
+                    "nettop consecutive failures reached \(consecutiveFailures), auto-stopping ProcessNetworkMonitor",
+                    level: .error
+                )
+                stop()
+                // 同步禁用状态到 UI 和持久化存储，避免 UI 显示与实际状态不一致
+                UserDefaults.standard.set(false, forKey: enabledKey)
+                DispatchQueue.main.async { [weak self] in
+                    self?.isEnabled = false
+                }
+            }
+            return
+        }
+        consecutiveFailures = 0
         let parsed = parseNettopOutput(output)
 
         let previous = lastSnapshot
@@ -218,14 +237,33 @@ final class ProcessNetworkMonitor: ObservableObject {
 
         let deadline = DispatchTime.now() + nettopTimeout
         if semaphore.wait(timeout: deadline) == .timedOut {
+            // 超时：先关闭 pipe 两端，让 readDataToEndOfFile() 立即返回
+            pipe.fileHandleForReading.closeFile()
+            pipe.fileHandleForWriting.closeFile()
+
             if !didTerminate {
                 process.terminate()
-                LogManager.shared.log("nettop timed out, terminated", level: .warn)
+                let pid = process.processIdentifier
+                // 短暂等待 SIGTERM 生效，若仍未退出则 SIGKILL 强杀
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5) {
+                    if process.isRunning {
+                        kill(pid, SIGKILL)
+                    }
+                }
+                LogManager.shared.log("nettop timed out, terminated (pid=\(pid))", level: .warn)
             }
+
+            // 等待后台读取线程完成，避免线程泄漏
+            readGroup.wait()
             return nil
         }
 
         readGroup.wait()
+
+        // 正常退出后也关闭 pipe，确保文件描述符被释放
+        pipe.fileHandleForReading.closeFile()
+        pipe.fileHandleForWriting.closeFile()
+
         return String(data: outputData, encoding: .utf8)
     }
 
