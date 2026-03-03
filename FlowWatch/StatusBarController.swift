@@ -79,6 +79,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }()
 
     private var dailyTrafficMenuItem: NSMenuItem?
+    private var isShowingQuitConfirmation = false
 
     private var cancellables = Set<AnyCancellable>()
     private var menu: NSMenu = NSMenu()
@@ -473,12 +474,16 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     @objc private func openSettings() {
         LogManager.shared.log("Open settings window")
-        SettingsWindowController.shared.show()
+        DispatchQueue.main.async {
+            SettingsWindowController.shared.show()
+        }
     }
 
     @objc private func openAbout() {
         LogManager.shared.log("Open about window")
-        AboutWindowController.shared.show()
+        DispatchQueue.main.async {
+            AboutWindowController.shared.show()
+        }
     }
 
     @objc private func checkForUpdates() {
@@ -493,6 +498,15 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     @objc private func quitApp() {
         LogManager.shared.log("Quit requested from status bar")
+        DispatchQueue.main.async { [weak self] in
+            self?.presentQuitConfirmationIfNeeded()
+        }
+    }
+
+    private func presentQuitConfirmationIfNeeded() {
+        guard !isShowingQuitConfirmation else { return }
+        isShowingQuitConfirmation = true
+
         let alert = NSAlert()
         alert.messageText = LocalizationManager.shared.t("quit.confirm.title")
         alert.informativeText = LocalizationManager.shared.t("quit.confirm.message")
@@ -500,12 +514,31 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         alert.addButton(withTitle: LocalizationManager.shared.t("common.cancel"))
         alert.addButton(withTitle: LocalizationManager.shared.t("common.quit"))
 
-        // accessory 模式下需要先激活应用，否则弹窗会藏在其他窗口后面
+        // accessory 模式下先激活应用，避免弹窗被其他窗口遮挡
         NSApp.activate(ignoringOtherApps: true)
 
-        let response = alert.runModal()
-        if response == .alertSecondButtonReturn {
-            NSApplication.shared.terminate(nil)
+        let handleResponse: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else { return }
+            self.isShowingQuitConfirmation = false
+            if response == .alertSecondButtonReturn {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+
+        if let window = sheetAnchorWindow() {
+            alert.beginSheetModal(for: window, completionHandler: handleResponse)
+        } else {
+            // 没有可挂载的普通窗口时，仍允许应用级弹窗确认退出
+            handleResponse(alert.runModal())
+        }
+    }
+
+    private func sheetAnchorWindow() -> NSWindow? {
+        NSApp.windows.first { window in
+            window.isVisible
+                && window.canBecomeKey
+                && window.styleMask.contains(.titled)
+                && !window.styleMask.contains(.borderless)
         }
     }
 
@@ -572,7 +605,9 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     
     @objc private func openPerAppDetail() {
         LogManager.shared.log("Open per-app traffic detail window")
-        PerAppTrafficDetailWindowController.shared.show()
+        DispatchQueue.main.async {
+            PerAppTrafficDetailWindowController.shared.show()
+        }
     }
 
     private func startAnimation(targetDown: Double, targetUp: Double,
