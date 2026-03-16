@@ -155,6 +155,7 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
     }
 
     func windowWillClose(_ notification: Notification) {
+        LogManager.shared.log("Per-app traffic detail window will close")
         window?.contentViewController = nil
         window = nil
     }
