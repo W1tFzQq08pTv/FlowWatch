@@ -1,0 +1,32 @@
+name: Xcode Build Check
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  xcode-build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Show build environment
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: Build project
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project FlowWatch.xcodeproj \
+            -scheme FlowWatch \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
