@@ -1,0 +1,36 @@
+name: Code Check
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  swift-typecheck:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Show toolchain versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcrun swiftc --version
+
+      - name: Run Swift type check
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          sdk_path="$(xcrun --show-sdk-path --sdk macosx)"
+          target="$(uname -m)-apple-macos13.0"
+          swift_files=($(find FlowWatch -type f -name '*.swift' | sort))
+
+          xcrun swiftc -typecheck \
+            -module-name FlowWatch \
+            -target "$target" \
+            -sdk "$sdk_path" \
+            $swift_files
