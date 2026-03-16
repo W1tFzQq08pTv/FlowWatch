@@ -514,31 +514,20 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         alert.addButton(withTitle: LocalizationManager.shared.t("common.cancel"))
         alert.addButton(withTitle: LocalizationManager.shared.t("common.quit"))
 
-        // accessory 模式下先激活应用，避免弹窗被其他窗口遮挡
+        // 状态栏菜单触发退出时使用独立 modal alert，避免挂到某个窗口的 sheet 后
+        // 造成窗口无法关闭、确认框不可见的情况。
         NSApp.activate(ignoringOtherApps: true)
+        LogManager.shared.log("Present quit confirmation alert")
 
-        let handleResponse: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            guard let self else { return }
-            self.isShowingQuitConfirmation = false
-            if response == .alertSecondButtonReturn {
-                NSApplication.shared.terminate(nil)
-            }
-        }
+        let response = alert.runModal()
+        isShowingQuitConfirmation = false
+        LogManager.shared.log("Quit confirmation response: \(response.rawValue)")
 
-        if let window = sheetAnchorWindow() {
-            alert.beginSheetModal(for: window, completionHandler: handleResponse)
+        if response == .alertSecondButtonReturn {
+            LogManager.shared.log("Quit confirmed, terminating app")
+            NSApplication.shared.terminate(nil)
         } else {
-            // 没有可挂载的普通窗口时，仍允许应用级弹窗确认退出
-            handleResponse(alert.runModal())
-        }
-    }
-
-    private func sheetAnchorWindow() -> NSWindow? {
-        NSApp.windows.first { window in
-            window.isVisible
-                && window.canBecomeKey
-                && window.styleMask.contains(.titled)
-                && !window.styleMask.contains(.borderless)
+            LogManager.shared.log("Quit cancelled")
         }
     }
 
