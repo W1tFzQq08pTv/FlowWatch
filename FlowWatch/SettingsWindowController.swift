@@ -37,6 +37,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
         DispatchQueue.main.async { [weak self] in
             self?.window?.makeFirstResponder(nil)
+            LaunchAtLoginManager.shared.presentPromptIfNeeded(on: self?.window)
         }
     }
 
