@@ -115,6 +115,7 @@ final class ProcessNetworkMonitor: ObservableObject {
         lastSnapshot.removeAll()
         resetStreamingState()
         launchNettopProcess()
+        guard nettopProcess != nil, isEnabled else { return }
         startWatchdog()
     }
 

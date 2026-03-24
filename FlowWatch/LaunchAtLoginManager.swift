@@ -108,16 +108,21 @@ final class LaunchAtLoginManager {
 
         isPromptVisible = false
         let defaults = UserDefaults.standard
-        defaults.set(true, forKey: hasPromptedKey)
         
-        if response == .alertFirstButtonReturn {
-            // 允许
+        switch response {
+        case .alertFirstButtonReturn:
+            defaults.set(true, forKey: hasPromptedKey)
             do {
                 try setEnabled(true)
                 LogManager.shared.log("Launch at login enabled by user")
             } catch {
                 LogManager.shared.log("Failed to enable launch at login: \(error)", level: .error)
             }
+        case .alertSecondButtonReturn:
+            defaults.set(true, forKey: hasPromptedKey)
+        default:
+            isPromptPending = true
+            LogManager.shared.log("Launch at login prompt aborted, keeping prompt pending")
         }
     }
 }
