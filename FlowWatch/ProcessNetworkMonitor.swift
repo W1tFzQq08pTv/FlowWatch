@@ -27,13 +27,22 @@ final class ProcessNetworkMonitor: ObservableObject {
     private let maxConsecutiveFailures = 10
 
     private var consecutiveFailures = 0
-    private var timer: DispatchSourceTimer?
+    private var watchdogTimer: DispatchSourceTimer?
     private var lastSnapshot: [pid_t: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
     private let resolver = AppInfoResolver.shared
     private let storage = ProcessTrafficStorage.shared
+    private let queueKey = DispatchSpecificKey<UInt8>()
     private let queue = DispatchQueue(label: "com.flowwatch.processmonitor", qos: .utility)
+    private var nettopProcess: Process?
+    private var nettopPipe: Pipe?
+    private var nettopBuffer = ""
+    private var currentSampleLines: [String] = []
+    private var lastSuccessfulSampleAt: Date?
+    private var nettopStartedAt: Date?
+    private var expectedTerminationPIDs: Set<pid_t> = []
 
     init() {
+        queue.setSpecific(key: queueKey, value: 1)
         isEnabled = UserDefaults.standard.bool(forKey: enabledKey)
         if isEnabled {
             start()
@@ -41,7 +50,9 @@ final class ProcessNetworkMonitor: ObservableObject {
     }
 
     deinit {
-        timer?.cancel()
+        performOnQueueSync {
+            stopMonitoring(logStop: false, clearPublishedRates: false)
+        }
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -58,58 +69,304 @@ final class ProcessNetworkMonitor: ObservableObject {
         let clamped = min(max(interval, 1), 30)
         UserDefaults.standard.set(clamped, forKey: intervalKey)
         LogManager.shared.log("Per-app sample interval updated to \(clamped)s")
-        if timer != nil {
-            stop()
-            start()
+        performOnQueueSync {
+            guard watchdogTimer != nil || nettopProcess != nil else { return }
+            stopMonitoring(logStop: false, clearPublishedRates: false)
+            startMonitoring()
         }
     }
 
     func start() {
-        guard timer == nil else { return }
-        LogManager.shared.log("ProcessNetworkMonitor started")
-        consecutiveFailures = 0
-        lastSnapshot.removeAll()
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now(), repeating: sampleInterval)
-        timer.setEventHandler { [weak self] in
-            self?.sample()
+        performOnQueueSync {
+            startMonitoring()
         }
-        timer.resume()
-        self.timer = timer
     }
 
     func stop() {
-        timer?.cancel()
-        timer = nil
-        lastSnapshot.removeAll()
-        DispatchQueue.main.async { [weak self] in
-            self?.appTrafficRates = []
+        performOnQueueSync {
+            stopMonitoring(logStop: true, clearPublishedRates: true)
         }
-        LogManager.shared.log("ProcessNetworkMonitor stopped")
     }
 
     func saveData() {
         storage.saveIfNeeded(force: true)
     }
 
-    private func sample() {
-        guard let output = runNettop() else {
-            consecutiveFailures += 1
-            if consecutiveFailures >= maxConsecutiveFailures {
-                LogManager.shared.log(
-                    "nettop consecutive failures reached \(consecutiveFailures), auto-stopping ProcessNetworkMonitor",
-                    level: .error
-                )
-                stop()
-                // 同步禁用状态到 UI 和持久化存储，避免 UI 显示与实际状态不一致
-                UserDefaults.standard.set(false, forKey: enabledKey)
-                DispatchQueue.main.async { [weak self] in
-                    self?.isEnabled = false
-                }
+    private func performOnQueue(_ work: @escaping () -> Void) {
+        if DispatchQueue.getSpecific(key: queueKey) == 1 {
+            work()
+        } else {
+            queue.async(execute: work)
+        }
+    }
+
+    private func performOnQueueSync(_ work: () -> Void) {
+        if DispatchQueue.getSpecific(key: queueKey) == 1 {
+            work()
+        } else {
+            queue.sync(execute: work)
+        }
+    }
+
+    private func startMonitoring() {
+        guard watchdogTimer == nil, nettopProcess == nil else { return }
+        LogManager.shared.log("ProcessNetworkMonitor started")
+        consecutiveFailures = 0
+        lastSnapshot.removeAll()
+        resetStreamingState()
+        launchNettopProcess()
+        guard nettopProcess != nil, isEnabled else { return }
+        startWatchdog()
+    }
+
+    private func stopMonitoring(logStop: Bool, clearPublishedRates: Bool) {
+        stopWatchdog()
+        stopNettopProcess()
+        lastSnapshot.removeAll()
+        resetStreamingState()
+        if clearPublishedRates {
+            DispatchQueue.main.async { [weak self] in
+                self?.appTrafficRates = []
             }
+        }
+        if logStop {
+            LogManager.shared.log("ProcessNetworkMonitor stopped")
+        }
+    }
+
+    private func resetStreamingState() {
+        nettopBuffer.removeAll(keepingCapacity: false)
+        currentSampleLines.removeAll(keepingCapacity: false)
+        lastSuccessfulSampleAt = nil
+        nettopStartedAt = nil
+    }
+
+    private func startWatchdog() {
+        guard watchdogTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + watchdogThreshold, repeating: 1.0)
+        timer.setEventHandler { [weak self] in
+            self?.checkWatchdog()
+        }
+        timer.resume()
+        watchdogTimer = timer
+    }
+
+    private func stopWatchdog() {
+        watchdogTimer?.cancel()
+        watchdogTimer = nil
+    }
+
+    private var watchdogThreshold: TimeInterval {
+        sampleInterval + nettopTimeout
+    }
+
+    private func checkWatchdog() {
+        guard let process = nettopProcess else { return }
+        let referenceDate = lastSuccessfulSampleAt ?? nettopStartedAt ?? Date()
+        let stallDuration = Date().timeIntervalSince(referenceDate)
+        guard stallDuration > watchdogThreshold else { return }
+
+        registerFailure(
+            "nettop stream stalled for \(Int(stallDuration.rounded()))s, restarting (pid=\(process.processIdentifier))",
+            level: .warn
+        )
+    }
+
+    private func launchNettopProcess() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
+        process.arguments = [
+            "-P",
+            "-L", "0",
+            "-s", String(Int(sampleInterval.rounded())),
+            "-J", "bytes_in,bytes_out",
+            "-n"
+        ]
+
+        let pipe = Pipe()
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard let self else { return }
+            self.performOnQueue {
+                if data.isEmpty {
+                    handle.readabilityHandler = nil
+                    return
+                }
+                self.handleNettopOutput(data)
+            }
+        }
+
+        process.terminationHandler = { [weak self] terminatedProcess in
+            self?.performOnQueue {
+                self?.handleNettopTermination(terminatedProcess)
+            }
+        }
+
+        do {
+            try process.run()
+            pipe.fileHandleForWriting.closeFile()
+        } catch {
+            pipe.fileHandleForReading.readabilityHandler = nil
+            pipe.fileHandleForReading.closeFile()
+            pipe.fileHandleForWriting.closeFile()
+            registerFailure("nettop launch failed: \(error)", level: .error)
             return
         }
+
+        nettopProcess = process
+        nettopPipe = pipe
+        nettopStartedAt = Date()
+        lastSuccessfulSampleAt = nil
+        LogManager.shared.log(
+            "nettop stream started (pid=\(process.processIdentifier), interval=\(Int(sampleInterval.rounded()))s)"
+        )
+    }
+
+    private func stopNettopProcess() {
+        guard let process = nettopProcess else {
+            nettopPipe?.fileHandleForReading.readabilityHandler = nil
+            nettopPipe?.fileHandleForReading.closeFile()
+            nettopPipe?.fileHandleForWriting.closeFile()
+            nettopPipe = nil
+            return
+        }
+
+        expectedTerminationPIDs.insert(process.processIdentifier)
+        nettopProcess = nil
+
+        let pipe = nettopPipe
+        nettopPipe = nil
+        pipe?.fileHandleForReading.readabilityHandler = nil
+        pipe?.fileHandleForReading.closeFile()
+        pipe?.fileHandleForWriting.closeFile()
+
+        if process.isRunning {
+            process.terminate()
+            let pid = process.processIdentifier
+            queue.asyncAfter(deadline: .now() + 0.5) {
+                if process.isRunning {
+                    kill(pid, SIGKILL)
+                }
+            }
+        }
+    }
+
+    private func handleNettopTermination(_ process: Process) {
+        let pid = process.processIdentifier
+
+        if expectedTerminationPIDs.remove(pid) != nil {
+            return
+        }
+
+        guard nettopProcess === process else { return }
+
+        if currentSampleLines.count > 1 {
+            flushCurrentSample()
+        }
+
+        nettopPipe?.fileHandleForReading.readabilityHandler = nil
+        nettopPipe = nil
+        nettopProcess = nil
+
+        registerFailure(
+            "nettop exited unexpectedly (pid=\(pid), reason=\(terminationReasonDescription(process.terminationReason)), status=\(process.terminationStatus))",
+            level: .warn
+        )
+    }
+
+    private func terminationReasonDescription(_ reason: Process.TerminationReason) -> String {
+        switch reason {
+        case .exit:
+            return "exit"
+        case .uncaughtSignal:
+            return "signal"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
+    private func handleNettopOutput(_ data: Data) {
+        nettopBuffer += String(decoding: data, as: UTF8.self)
+
+        while let newlineIndex = nettopBuffer.firstIndex(of: "\n") {
+            let line = String(nettopBuffer[..<newlineIndex])
+            nettopBuffer.removeSubrange(...newlineIndex)
+            consumeNettopLine(line)
+        }
+    }
+
+    private func consumeNettopLine(_ rawLine: String) {
+        let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty else { return }
+
+        if isHeaderLine(line) {
+            flushCurrentSample()
+            currentSampleLines = [line]
+            return
+        }
+
+        guard !currentSampleLines.isEmpty else { return }
+        currentSampleLines.append(line)
+    }
+
+    private func isHeaderLine(_ line: String) -> Bool {
+        let columns = line
+            .split(separator: ",", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        return columns.contains("bytes_in") && columns.contains("bytes_out")
+    }
+
+    private func flushCurrentSample() {
+        guard !currentSampleLines.isEmpty else { return }
+        let output = currentSampleLines.joined(separator: "\n")
+        currentSampleLines.removeAll(keepingCapacity: true)
+        handleSampleOutput(output)
+    }
+
+    private func registerFailure(_ message: String, level: LogManager.Level) {
+        consecutiveFailures += 1
+        LogManager.shared.log(
+            "\(message); consecutiveFailures=\(consecutiveFailures)",
+            level: level
+        )
+
+        if consecutiveFailures >= maxConsecutiveFailures {
+            LogManager.shared.log(
+                "nettop consecutive failures reached \(consecutiveFailures), auto-stopping ProcessNetworkMonitor",
+                level: .error
+            )
+            disableMonitoringDueToFailures()
+            return
+        }
+
+        restartNettopProcess()
+    }
+
+    private func restartNettopProcess() {
+        stopNettopProcess()
+        resetStreamingState()
+        lastSnapshot.removeAll()
+        guard isEnabled else { return }
+        launchNettopProcess()
+    }
+
+    private func disableMonitoringDueToFailures() {
+        stopMonitoring(logStop: true, clearPublishedRates: true)
+        UserDefaults.standard.set(false, forKey: enabledKey)
+        DispatchQueue.main.async { [weak self] in
+            self?.isEnabled = false
+        }
+    }
+
+    private func handleSampleOutput(_ output: String) {
         consecutiveFailures = 0
+        lastSuccessfulSampleAt = Date()
+
         let parsed = parseNettopOutput(output)
 
         let previous = lastSnapshot
@@ -197,74 +454,6 @@ final class ProcessNetworkMonitor: ObservableObject {
         let processName: String
         let bytesIn: UInt64
         let bytesOut: UInt64
-    }
-
-    private func runNettop() -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
-        process.arguments = ["-P", "-L", "1", "-J", "bytes_in,bytes_out", "-n"]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-        } catch {
-            LogManager.shared.log("nettop launch failed: \(error)", level: .error)
-            return nil
-        }
-
-        // Read pipe data asynchronously to avoid deadlock when output exceeds pipe buffer
-        var outputData = Data()
-        let readQueue = DispatchQueue.global(qos: .utility)
-        let readGroup = DispatchGroup()
-        readGroup.enter()
-        readQueue.async {
-            outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-            readGroup.leave()
-        }
-
-        let semaphore = DispatchSemaphore(value: 0)
-        let waitQueue = DispatchQueue.global(qos: .utility)
-        var didTerminate = false
-
-        waitQueue.async {
-            process.waitUntilExit()
-            didTerminate = true
-            semaphore.signal()
-        }
-
-        let deadline = DispatchTime.now() + nettopTimeout
-        if semaphore.wait(timeout: deadline) == .timedOut {
-            // 超时：先关闭 pipe 两端，让 readDataToEndOfFile() 立即返回
-            pipe.fileHandleForReading.closeFile()
-            pipe.fileHandleForWriting.closeFile()
-
-            if !didTerminate {
-                process.terminate()
-                let pid = process.processIdentifier
-                // 短暂等待 SIGTERM 生效，若仍未退出则 SIGKILL 强杀
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5) {
-                    if process.isRunning {
-                        kill(pid, SIGKILL)
-                    }
-                }
-                LogManager.shared.log("nettop timed out, terminated (pid=\(pid))", level: .warn)
-            }
-
-            // 等待后台读取线程完成，避免线程泄漏
-            readGroup.wait()
-            return nil
-        }
-
-        readGroup.wait()
-
-        // 正常退出后也关闭 pipe，确保文件描述符被释放
-        pipe.fileHandleForReading.closeFile()
-        pipe.fileHandleForWriting.closeFile()
-
-        return String(data: outputData, encoding: .utf8)
     }
 
     private func parseNettopOutput(_ output: String) -> [NettopEntry] {

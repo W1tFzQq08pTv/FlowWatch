@@ -35,6 +35,7 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         window?.center()
         window?.makeKeyAndOrderFront(nil)
+        LaunchAtLoginManager.shared.presentPromptIfNeeded(on: window)
     }
 
     func windowWillClose(_ notification: Notification) {
