@@ -37,8 +37,57 @@ final class ProcessNetworkMonitor: ObservableObject {
     private let storage = ProcessTrafficStorage.shared
     private let queueKey = DispatchSpecificKey<UInt8>()
     private let queue = DispatchQueue(label: "com.flowwatch.processmonitor", qos: .utility)
-    private var activeSampleProcess: Process?
+    private var activeSampleContext: SampleContext?
     private var expectedTerminationPIDs: Set<pid_t> = []
+
+    private final class SampleContext {
+        let process: Process
+        let outputPipe: Pipe
+        let errorPipe: Pipe
+
+        private let lock = NSLock()
+        private var outputBuffer = Data()
+        private var errorBuffer = Data()
+
+        init(process: Process, outputPipe: Pipe, errorPipe: Pipe) {
+            self.process = process
+            self.outputPipe = outputPipe
+            self.errorPipe = errorPipe
+        }
+
+        func consumeAvailableData(from handle: FileHandle, isError: Bool) -> Bool {
+            lock.lock()
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                lock.unlock()
+                return false
+            }
+            if isError {
+                errorBuffer.append(data)
+            } else {
+                outputBuffer.append(data)
+            }
+            lock.unlock()
+            return true
+        }
+
+        func stopReading() {
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+            errorPipe.fileHandleForReading.readabilityHandler = nil
+        }
+
+        func drainBuffers() -> (output: Data, error: Data) {
+            lock.lock()
+            var output = outputBuffer
+            var error = errorBuffer
+            outputBuffer.removeAll(keepingCapacity: false)
+            errorBuffer.removeAll(keepingCapacity: false)
+            output.append(outputPipe.fileHandleForReading.readDataToEndOfFile())
+            error.append(errorPipe.fileHandleForReading.readDataToEndOfFile())
+            lock.unlock()
+            return (output: output, error: error)
+        }
+    }
 
     init() {
         queue.setSpecific(key: queueKey, value: 1)
@@ -69,7 +118,7 @@ final class ProcessNetworkMonitor: ObservableObject {
         UserDefaults.standard.set(clamped, forKey: intervalKey)
         LogManager.shared.log("Per-app sample interval updated to \(clamped)s")
         performOnQueueSync {
-            guard sampleTimer != nil || activeSampleProcess != nil else { return }
+            guard sampleTimer != nil || activeSampleContext != nil else { return }
             stopMonitoring(logStop: false, clearPublishedRates: false)
             startMonitoring()
         }
@@ -108,7 +157,7 @@ final class ProcessNetworkMonitor: ObservableObject {
     }
 
     private func startMonitoring() {
-        guard sampleTimer == nil, activeSampleProcess == nil else { return }
+        guard sampleTimer == nil, activeSampleContext == nil else { return }
         LogManager.shared.log("ProcessNetworkMonitor started")
         consecutiveFailures = 0
         lastSnapshot.removeAll()
@@ -149,7 +198,7 @@ final class ProcessNetworkMonitor: ObservableObject {
     }
 
     private func runSampleIfNeeded() {
-        guard isEnabled, activeSampleProcess == nil else { return }
+        guard isEnabled, activeSampleContext == nil else { return }
         launchSampleProcess()
     }
 
@@ -157,6 +206,7 @@ final class ProcessNetworkMonitor: ObservableObject {
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
+        let context = SampleContext(process: process, outputPipe: outputPipe, errorPipe: errorPipe)
 
         process.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
         process.arguments = [
@@ -168,36 +218,48 @@ final class ProcessNetworkMonitor: ObservableObject {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = outputPipe
         process.standardError = errorPipe
+        startReading(from: outputPipe.fileHandleForReading, context: context, isError: false)
+        startReading(from: errorPipe.fileHandleForReading, context: context, isError: true)
         process.terminationHandler = { [weak self] finishedProcess in
             self?.performOnQueue {
                 self?.handleSampleTermination(
                     finishedProcess,
-                    outputPipe: outputPipe,
-                    errorPipe: errorPipe
+                    context: context
                 )
             }
         }
 
-        activeSampleProcess = process
+        activeSampleContext = context
 
         do {
             try process.run()
-            scheduleSampleTimeout(for: process)
+            scheduleSampleTimeout(for: context)
         } catch {
-            activeSampleProcess = nil
+            activeSampleContext = nil
+            context.stopReading()
             registerFailure("nettop launch failed: \(error)", level: .error)
         }
     }
 
-    private func scheduleSampleTimeout(for process: Process) {
-        cancelSampleTimeout()
-        let timeoutWorkItem = DispatchWorkItem { [weak self, weak process] in
-            guard let self, let process else { return }
-            guard self.activeSampleProcess === process else { return }
+    private func startReading(from handle: FileHandle, context: SampleContext, isError: Bool) {
+        handle.readabilityHandler = { readableHandle in
+            let hasData = context.consumeAvailableData(from: readableHandle, isError: isError)
+            if !hasData {
+                readableHandle.readabilityHandler = nil
+            }
+        }
+    }
 
+    private func scheduleSampleTimeout(for context: SampleContext) {
+        cancelSampleTimeout()
+        let timeoutWorkItem = DispatchWorkItem { [weak self, weak context] in
+            guard let self, let context else { return }
+            guard self.activeSampleContext === context else { return }
+
+            let process = context.process
             let pid = process.processIdentifier
             self.expectedTerminationPIDs.insert(pid)
-            self.activeSampleProcess = nil
+            self.activeSampleContext = nil
             self.cancelSampleTimeout()
 
             if process.isRunning {
@@ -223,9 +285,10 @@ final class ProcessNetworkMonitor: ObservableObject {
     private func stopActiveSample() {
         cancelSampleTimeout()
 
-        guard let process = activeSampleProcess else { return }
-        activeSampleProcess = nil
+        guard let context = activeSampleContext else { return }
+        activeSampleContext = nil
 
+        let process = context.process
         let pid = process.processIdentifier
         expectedTerminationPIDs.insert(pid)
 
@@ -241,23 +304,19 @@ final class ProcessNetworkMonitor: ObservableObject {
 
     private func handleSampleTermination(
         _ process: Process,
-        outputPipe: Pipe,
-        errorPipe: Pipe
+        context: SampleContext
     ) {
-        if activeSampleProcess === process {
-            activeSampleProcess = nil
+        if activeSampleContext === context {
+            activeSampleContext = nil
             cancelSampleTimeout()
         }
 
+        context.stopReading()
+
         let pid = process.processIdentifier
-        let output = String(
-            decoding: outputPipe.fileHandleForReading.readDataToEndOfFile(),
-            as: UTF8.self
-        )
-        let errorOutput = String(
-            decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-            as: UTF8.self
-        )
+        let drained = context.drainBuffers()
+        let output = String(decoding: drained.output, as: UTF8.self)
+        let errorOutput = String(decoding: drained.error, as: UTF8.self)
         let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedErrorOutput = errorOutput.trimmingCharacters(in: .whitespacesAndNewlines)
 
