@@ -54,7 +54,7 @@ struct TrafficStatisticsDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
+        FlowWatchThinScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
 
@@ -68,7 +68,6 @@ struct TrafficStatisticsDetailView: View {
             }
             .padding(20)
         }
-        .scrollIndicators(.hidden)
         .background(Color(nsColor: .windowBackgroundColor))
         .frame(minWidth: 520, minHeight: 540)
         .onAppear {

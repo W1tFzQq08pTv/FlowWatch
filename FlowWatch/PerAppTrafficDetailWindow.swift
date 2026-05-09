@@ -256,10 +256,13 @@ struct PerAppTrafficDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
+                .zIndex(10)
             Divider()
             summaryBar
+                .zIndex(1)
             Divider()
             content
+                .zIndex(0)
         }
         .frame(minWidth: 640, minHeight: 420)
         .onChange(of: dateRange) { newRange in
@@ -372,7 +375,7 @@ struct PerAppTrafficDetailView: View {
     }
 
     private var tableView: some View {
-        ScrollView {
+        FlowWatchThinScrollView {
             LazyVStack(spacing: 0, pinnedViews: []) {
                 tableHeader
 
@@ -383,7 +386,6 @@ struct PerAppTrafficDetailView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .scrollIndicators(.hidden)
         .background(Color(.windowBackgroundColor))
     }
 
