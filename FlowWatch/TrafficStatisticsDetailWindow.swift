@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 final class TrafficStatisticsDetailWindowController: NSWindowController, NSWindowDelegate {
@@ -22,8 +23,8 @@ final class TrafficStatisticsDetailWindowController: NSWindowController, NSWindo
         window.title = LocalizationManager.shared.t("statistics.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 520, height: 560))
-        window.minSize = NSSize(width: 480, height: 480)
+        window.setContentSize(NSSize(width: 560, height: 680))
+        window.minSize = NSSize(width: 520, height: 540)
         window.delegate = self
         return window
     }
@@ -68,7 +69,7 @@ struct TrafficStatisticsDetailView: View {
             .padding(20)
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .frame(minWidth: 480, minHeight: 480)
+        .frame(minWidth: 520, minHeight: 540)
         .onAppear {
             viewModel.reload()
         }
@@ -153,6 +154,18 @@ struct TrafficStatisticsDetailView: View {
                     tint: .purple
                 )
                 metricCard(
+                    title: l10n.t("statistics.overview.todayTraffic"),
+                    value: TrafficStatsFormatter.bytes(summary.todayTotalBytes),
+                    caption: l10n.t("daily.today"),
+                    tint: .indigo
+                )
+                metricCard(
+                    title: l10n.t("statistics.overview.yesterdayTraffic"),
+                    value: TrafficStatsFormatter.bytes(summary.yesterdayTotalBytes),
+                    caption: l10n.t("statistics.trend.dayOverDay.caption"),
+                    tint: .mint
+                )
+                metricCard(
                     title: l10n.t("statistics.overview.recordDays"),
                     value: String(format: l10n.t("statistics.value.days"), summary.recordDays),
                     caption: l10n.t("daily.section.allHistory"),
@@ -190,6 +203,24 @@ struct TrafficStatisticsDetailView: View {
                     tint: .purple
                 )
                 detailRow(
+                    title: l10n.t("statistics.trend.activeDayAverage"),
+                    value: TrafficStatsFormatter.bytes(summary.activeDayAverageBytes),
+                    caption: l10n.t("statistics.trend.activeDayAverage.caption"),
+                    tint: .teal
+                )
+                detailRow(
+                    title: l10n.t("statistics.trend.last30Total"),
+                    value: TrafficStatsFormatter.bytes(summary.last30TotalBytes),
+                    caption: l10n.t("statistics.range.last30Days"),
+                    tint: .cyan
+                )
+                detailRow(
+                    title: l10n.t("statistics.trend.last30Average"),
+                    value: TrafficStatsFormatter.bytes(summary.last30AverageBytes),
+                    caption: l10n.t("statistics.trend.naturalDays30"),
+                    tint: .mint
+                )
+                detailRow(
                     title: l10n.t("daily.fun.dayOverDay.title"),
                     value: dayOverDayValue,
                     caption: l10n.t("statistics.trend.dayOverDay.caption"),
@@ -200,6 +231,12 @@ struct TrafficStatisticsDetailView: View {
                     value: TrafficStatsFormatter.bytes(summary.last7Peak?.bytes ?? 0),
                     caption: summary.last7Peak.map { dateText($0.date) } ?? l10n.t("daily.peak.noData"),
                     tint: .orange
+                )
+                detailRow(
+                    title: l10n.t("statistics.trend.allTimePeak"),
+                    value: TrafficStatsFormatter.bytes(summary.allTimePeak?.bytes ?? 0),
+                    caption: summary.allTimePeak.map { dateText($0.date) } ?? l10n.t("daily.peak.noData"),
+                    tint: .pink
                 )
             }
         }
@@ -240,6 +277,48 @@ struct TrafficStatisticsDetailView: View {
                         value: TrafficStatsFormatter.percent(summary.last7DownloadShare),
                         caption: l10n.t("statistics.range.last7Days"),
                         tint: .blue
+                    )
+                    metricCard(
+                        title: l10n.t("statistics.fun.uploadShare"),
+                        value: TrafficStatsFormatter.percent(summary.last7UploadShare),
+                        caption: l10n.t("statistics.range.last7Days"),
+                        tint: .orange
+                    )
+                    metricCard(
+                        title: l10n.t("statistics.fun.activeRate"),
+                        value: TrafficStatsFormatter.percent(summary.activeRate),
+                        caption: l10n.t("statistics.range.allHistory"),
+                        tint: .green
+                    )
+                    metricCard(
+                        title: l10n.t("statistics.fun.currentStreak"),
+                        value: String(format: l10n.t("statistics.value.days"), summary.currentActiveStreak),
+                        caption: l10n.t("statistics.fun.currentStreak.caption"),
+                        tint: .teal
+                    )
+                    metricCard(
+                        title: l10n.t("statistics.fun.longestStreak"),
+                        value: String(format: l10n.t("statistics.value.days"), summary.longestActiveStreak),
+                        caption: l10n.t("statistics.fun.longestStreak.caption"),
+                        tint: .indigo
+                    )
+                    metricCard(
+                        title: l10n.t("statistics.fun.quietDays"),
+                        value: String(format: l10n.t("statistics.value.days"), summary.last7QuietDays),
+                        caption: l10n.t("statistics.range.last7Days"),
+                        tint: .secondary
+                    )
+                    metricCard(
+                        title: l10n.t("statistics.fun.peakDownloadDate"),
+                        value: dateText(summary.peakDownloadDate?.date),
+                        caption: summary.peakDownloadDate.map { TrafficStatsFormatter.bytes($0.bytes) } ?? l10n.t("daily.peak.noData"),
+                        tint: .blue
+                    )
+                    metricCard(
+                        title: l10n.t("statistics.fun.peakUploadDate"),
+                        value: dateText(summary.peakUploadDate?.date),
+                        caption: summary.peakUploadDate.map { TrafficStatsFormatter.bytes($0.bytes) } ?? l10n.t("daily.peak.noData"),
+                        tint: .orange
                     )
                     metricCard(
                         title: l10n.t("statistics.fun.mostActiveDate"),
@@ -300,6 +379,7 @@ struct TrafficStatisticsDetailView: View {
             Text(value)
                 .font(.system(size: 18, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
+                .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.80)
 
@@ -336,6 +416,7 @@ struct TrafficStatisticsDetailView: View {
             Text(value)
                 .font(.system(size: 15, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
+                .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.80)
         }
@@ -430,14 +511,27 @@ private struct TrafficStatisticsSummary {
     let totalBytes: UInt64
     let recordDays: Int
     let activeDays: Int
+    let todayTotalBytes: UInt64
+    let yesterdayTotalBytes: UInt64
     let last7Downloaded: UInt64
     let last7Uploaded: UInt64
     let last7TotalBytes: UInt64
     let last7AverageBytes: UInt64
+    let last30TotalBytes: UInt64
+    let last30AverageBytes: UInt64
     let historyAverageBytes: UInt64
+    let activeDayAverageBytes: UInt64
     let last7DownloadShare: Double
+    let last7UploadShare: Double
+    let activeRate: Double
+    let last7QuietDays: Int
+    let currentActiveStreak: Int
+    let longestActiveStreak: Int
     let dayOverDay: TrafficDayOverDay
     let last7Peak: TrafficDayHighlight?
+    let allTimePeak: TrafficDayHighlight?
+    let peakDownloadDate: TrafficDayHighlight?
+    let peakUploadDate: TrafficDayHighlight?
     let mostActiveDate: TrafficDayHighlight?
     let recentActiveDate: Date?
 
@@ -461,6 +555,13 @@ private struct TrafficStatisticsSummary {
             let emptyRecord = DailyTrafficRecord(date: date)
             return recordsById[emptyRecord.id] ?? emptyRecord
         }
+        let recent30Records = (0..<30).reversed().compactMap { dayOffset -> DailyTrafficRecord? in
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else {
+                return nil
+            }
+            let emptyRecord = DailyTrafficRecord(date: date)
+            return recordsById[emptyRecord.id] ?? emptyRecord
+        }
 
         totalDownloaded = records.reduce(0) { $0 &+ $1.downloadBytes }
         totalUploaded = records.reduce(0) { $0 &+ $1.uploadBytes }
@@ -468,12 +569,27 @@ private struct TrafficStatisticsSummary {
         recordDays = records.count
         activeDays = records.filter { Self.totalBytes(for: $0) > 0 }.count
 
+        todayTotalBytes = recentRecords.last.map(Self.totalBytes(for:)) ?? 0
+        if recentRecords.count >= 2 {
+            yesterdayTotalBytes = Self.totalBytes(for: recentRecords[recentRecords.count - 2])
+        } else {
+            yesterdayTotalBytes = 0
+        }
         last7Downloaded = recentRecords.reduce(0) { $0 &+ $1.downloadBytes }
         last7Uploaded = recentRecords.reduce(0) { $0 &+ $1.uploadBytes }
         last7TotalBytes = last7Downloaded &+ last7Uploaded
         last7AverageBytes = last7TotalBytes / 7
+        last30TotalBytes = recent30Records.reduce(0) { $0 &+ Self.totalBytes(for: $1) }
+        last30AverageBytes = last30TotalBytes / 30
         historyAverageBytes = recordDays > 0 ? totalBytes / UInt64(recordDays) : 0
+        activeDayAverageBytes = activeDays > 0 ? totalBytes / UInt64(activeDays) : 0
         last7DownloadShare = last7TotalBytes > 0 ? Double(last7Downloaded) / Double(last7TotalBytes) : 0
+        last7UploadShare = last7TotalBytes > 0 ? Double(last7Uploaded) / Double(last7TotalBytes) : 0
+        activeRate = recordDays > 0 ? Double(activeDays) / Double(recordDays) : 0
+        last7QuietDays = recentRecords.filter { Self.totalBytes(for: $0) == 0 }.count
+        let activeDates = Set(records.filter { Self.totalBytes(for: $0) > 0 }.map(\.id))
+        currentActiveStreak = Self.currentStreak(activeDates: activeDates, endingAt: today, calendar: calendar)
+        longestActiveStreak = Self.longestStreak(records: records)
 
         if let todayRecord = recentRecords.last, recentRecords.count >= 2 {
             let yesterdayRecord = recentRecords[recentRecords.count - 2]
@@ -483,6 +599,9 @@ private struct TrafficStatisticsSummary {
         }
 
         last7Peak = Self.highlight(from: recentRecords)
+        allTimePeak = Self.highlight(from: records)
+        peakDownloadDate = Self.highlight(from: records, value: \.downloadBytes)
+        peakUploadDate = Self.highlight(from: records, value: \.uploadBytes)
         mostActiveDate = Self.highlight(from: records)
         recentActiveDate = records
             .filter { Self.totalBytes(for: $0) > 0 }
@@ -490,7 +609,7 @@ private struct TrafficStatisticsSummary {
             .date
     }
 
-    private static func highlight(from records: [DailyTrafficRecord]) -> TrafficDayHighlight? {
+    nonisolated private static func highlight(from records: [DailyTrafficRecord]) -> TrafficDayHighlight? {
         guard let record = records
             .filter({ totalBytes(for: $0) > 0 })
             .max(by: { totalBytes(for: $0) < totalBytes(for: $1) }) else {
@@ -499,7 +618,19 @@ private struct TrafficStatisticsSummary {
         return TrafficDayHighlight(date: record.date, bytes: totalBytes(for: record))
     }
 
-    private static func makeDayOverDay(today: DailyTrafficRecord, yesterday: DailyTrafficRecord) -> TrafficDayOverDay {
+    nonisolated private static func highlight(
+        from records: [DailyTrafficRecord],
+        value: (DailyTrafficRecord) -> UInt64
+    ) -> TrafficDayHighlight? {
+        guard let record = records
+            .filter({ value($0) > 0 })
+            .max(by: { value($0) < value($1) }) else {
+            return nil
+        }
+        return TrafficDayHighlight(date: record.date, bytes: value(record))
+    }
+
+    nonisolated private static func makeDayOverDay(today: DailyTrafficRecord, yesterday: DailyTrafficRecord) -> TrafficDayOverDay {
         let todayTotal = totalBytes(for: today)
         let yesterdayTotal = totalBytes(for: yesterday)
         if todayTotal == yesterdayTotal {
@@ -511,8 +642,54 @@ private struct TrafficStatisticsSummary {
         return .decreased(yesterdayTotal - todayTotal)
     }
 
-    private static func totalBytes(for record: DailyTrafficRecord) -> UInt64 {
+    nonisolated private static func totalBytes(for record: DailyTrafficRecord) -> UInt64 {
         record.downloadBytes &+ record.uploadBytes
+    }
+
+    nonisolated private static func currentStreak(activeDates: Set<String>, endingAt date: Date, calendar: Calendar) -> Int {
+        var streak = 0
+        var currentDate = calendar.startOfDay(for: date)
+
+        while true {
+            let id = DailyTrafficRecord.dateId(from: currentDate)
+            guard activeDates.contains(id) else {
+                return streak
+            }
+            streak += 1
+            guard let previousDate = calendar.date(byAdding: .day, value: -1, to: currentDate) else {
+                return streak
+            }
+            currentDate = previousDate
+        }
+    }
+
+    nonisolated private static func longestStreak(records: [DailyTrafficRecord]) -> Int {
+        let activeRecords = records
+            .filter { totalBytes(for: $0) > 0 }
+            .sorted { $0.date < $1.date }
+        guard !activeRecords.isEmpty else {
+            return 0
+        }
+
+        let calendar = Calendar.current
+        var longest = 1
+        var current = 1
+
+        for index in 1..<activeRecords.count {
+            let previous = calendar.startOfDay(for: activeRecords[index - 1].date)
+            let date = calendar.startOfDay(for: activeRecords[index].date)
+            let dayDelta = calendar.dateComponents([.day], from: previous, to: date).day ?? 0
+
+            if dayDelta == 1 {
+                current += 1
+            } else if dayDelta > 1 {
+                current = 1
+            }
+
+            longest = max(longest, current)
+        }
+
+        return longest
     }
 }
 
