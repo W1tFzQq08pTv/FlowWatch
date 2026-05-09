@@ -1,10 +1,41 @@
 "settings.title" = "FlowWatch 设置";
 "settings.subtitle" = "状态栏显示、上色与启动选项";
+"settings.subtitle.general" = "语言与基础偏好";
+"settings.subtitle.statusBar" = "状态栏内容、采样和数字过渡";
+"settings.subtitle.coloring" = "速率颜色阈值和强度";
+"settings.subtitle.launch" = "登录后自动启动";
+"settings.subtitle.updates" = "自动检查和版本状态";
+"settings.subtitle.logging" = "本地日志开关与位置";
+"settings.subtitle.perApp" = "按应用采集流量数据";
+"settings.subtitle.data" = "重置或清空本地统计";
+"settings.sidebar.subtitle" = "偏好设置";
+"settings.group.language" = "界面语言";
+"settings.group.statusDisplay" = "状态栏显示";
+"settings.group.numberUpdates" = "刷新与动效";
+"settings.group.colorRules" = "颜色规则";
+"settings.group.login" = "登录启动";
+"settings.group.updatePolicy" = "更新策略";
+"settings.group.updateStatus" = "更新状态";
+"settings.group.logs" = "日志记录";
+"settings.group.logsLocation" = "日志位置";
+"settings.group.perAppCapture" = "应用流量采集";
+"settings.group.dataActions" = "数据管理";
+"settings.state.on" = "开启";
+"settings.state.off" = "关闭";
+"settings.data.localOnly" = "本机数据";
+"settings.overview.display" = "状态栏";
+"settings.overview.sample" = "采样间隔";
+"settings.overview.transition" = "数值过渡";
+"settings.overview.perApp" = "应用流量";
+"settings.color.preview.low" = "低速";
+"settings.color.preview.medium" = "中速";
+"settings.color.preview.high" = "高速";
 "settings.language" = "语言";
 "settings.language.system" = "跟随系统";
 "settings.language.zhHans" = "简体中文";
 "settings.language.en" = "English";
 
+"settings.section.general" = "通用";
 "settings.section.displayContent" = "显示内容";
 "settings.section.statusBar" = "状态栏";
 "settings.section.coloring" = "上色";
@@ -28,6 +59,7 @@
 "settings.update.hint" = "仅影响自动检查，手动检查不受影响。";
 "settings.logging.toggle" = "日志输出";
 "settings.logging.hint" = "日志按日期保存，仅保留最近 7 天。";
+"settings.logging.openFolder" = "打开日志文件夹";
 "settings.logging.path" = "日志位置：%@";
 "settings.update.available" = "发现新版本：%@";
 "settings.update.lastCheck" = "上次检查：%@";
@@ -40,6 +72,32 @@
 "settings.data.resetToday" = "重置今日流量";
 "settings.data.clearAllHistory" = "清空全部历史";
 "settings.data.desc" = "“重置今日”只影响今天；“清空历史”会删除所有天的数据记录。";
+
+"statistics.title" = "统计详情";
+"statistics.subtitle" = "历史流量、趋势和轻量趣味统计";
+"statistics.empty.title" = "暂无历史数据";
+"statistics.empty.subtitle" = "开始使用后，这里会显示每天累计的下载和上传。";
+"statistics.section.overview" = "总览";
+"statistics.section.trends" = "趋势";
+"statistics.range.allHistory" = "全部历史";
+"statistics.range.last7Days" = "近 7 天";
+"statistics.value.days" = "%d 天";
+"statistics.value.none" = "暂无";
+"statistics.overview.totalDownload" = "总下载";
+"statistics.overview.totalUpload" = "总上传";
+"statistics.overview.totalTraffic" = "总流量";
+"statistics.overview.recordDays" = "记录天数";
+"statistics.overview.activeDays" = "活跃天数";
+"statistics.trend.last7Total" = "近 7 天总量";
+"statistics.trend.last7Average" = "近 7 天日均";
+"statistics.trend.historyAverage" = "历史日均";
+"statistics.trend.naturalDays" = "按 7 个自然日计算";
+"statistics.trend.dayOverDay.caption" = "今天 vs 昨天";
+"statistics.fun.personaSubtitle" = "近 7 天总量 %@";
+"statistics.fun.downloadShare" = "下载占比";
+"statistics.fun.mostActiveDate" = "最活跃日期";
+"statistics.fun.recentActiveDate" = "最近活跃日";
+"statistics.fun.recentActive.caption" = "最后一次有流量的日期";
 
 "alert.reset.title" = "确认重置流量统计？";
 "alert.reset.today" = "这将清零今日流量统计，且无法恢复。";
@@ -58,6 +116,9 @@
 "menuDisplayMode.compactSpeed" = "上下行速率";
 
 "daily.title" = "流量统计";
+"daily.currentSpeed" = "当前速率";
+"daily.today" = "今日";
+"daily.chart.last7Days" = "近 7 天趋势";
 "daily.section.last7days" = "近 7 天";
 "daily.section.allHistory" = "全部历史";
 "daily.section.allHistory.days" = "%d 天";
@@ -121,6 +182,7 @@
 
 "menu.settings" = "设置…";
 "menu.about" = "关于 FlowWatch";
+"menu.statisticsDetail" = "统计详情…";
 "menu.checkUpdate" = "检查更新…";
 "menu.checkingUpdate" = "正在检查更新…";
 "menu.updating" = "正在更新…";
@@ -176,11 +238,11 @@
 "perApp.appCount" = "%d 项";
 "perApp.detail.title" = "应用流量";
 "menu.perAppTraffic" = "应用流量…";
-"perApp.sort.total" = "按总量排序";
-"perApp.sort.download" = "按下载排序";
-"perApp.sort.upload" = "按上传排序";
-"perApp.sort.downloadSpeed" = "按下行速度排序";
-"perApp.sort.uploadSpeed" = "按上行速度排序";
+"perApp.sort.total" = "流量最多在前";
+"perApp.sort.download" = "下载最多在前";
+"perApp.sort.upload" = "上传最多在前";
+"perApp.sort.downloadSpeed" = "正在下载最快在前";
+"perApp.sort.uploadSpeed" = "正在上传最快在前";
 "perApp.filter.all" = "全部";
 "perApp.filter.apps" = "应用";
 "perApp.filter.processes" = "系统进程";
