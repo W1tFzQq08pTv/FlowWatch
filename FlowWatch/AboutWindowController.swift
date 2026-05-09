@@ -22,7 +22,7 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
         window.title = LocalizationManager.shared.t("menu.about")
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 360, height: 260))
+        window.setContentSize(NSSize(width: 360, height: 280))
         window.delegate = self
         return window
     }

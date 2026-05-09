@@ -69,12 +69,11 @@ struct ContentView: View {
             Text(l10n.t("content.statusbarDisplay"))
                 .font(.caption)
                 .foregroundColor(.secondary)
-            Picker(l10n.t("content.statusbarDisplay"), selection: $displayModeRaw) {
-                ForEach(FlowWatchApp.MenuDisplayMode.allCases, id: \.self) { mode in
-                    Text(l10n.t(mode.titleKey)).tag(mode.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
+            FlowWatchSegmentedControl(
+                options: FlowWatchApp.MenuDisplayMode.allCases.map { (l10n.t($0.titleKey), $0.rawValue) },
+                selection: $displayModeRaw,
+                tint: .blue
+            )
             Text(l10n.t("content.hint.openMenu"))
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -96,11 +95,11 @@ struct ContentView: View {
             Button(monitor.isActive ? l10n.t("content.action.pause") : l10n.t("content.action.resume")) {
                 monitor.toggle()
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(FlowWatchActionButtonStyle(tint: monitor.isActive ? .orange : .green))
             Button(l10n.t("content.action.quitApp")) {
                 NSApplication.shared.terminate(nil)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(FlowWatchActionButtonStyle(tint: .red, isDestructive: true))
             Spacer()
         }
     }

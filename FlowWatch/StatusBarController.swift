@@ -459,12 +459,15 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private func makeDailyTrafficMenuItem() -> NSMenuItem {
         let hostingView = NSHostingView(
-            rootView: LocalizedRootView { DailyTrafficView() }
+            rootView: LocalizedRootView { DailyTrafficView(monitor: monitor) }
                 .environmentObject(LocalizationManager.shared)
         )
         hostingView.layoutSubtreeIfNeeded()
-        var size = hostingView.fittingSize
-        size.height += 36
+        let fittingSize = hostingView.fittingSize
+        let size = NSSize(
+            width: ceil(fittingSize.width),
+            height: ceil(fittingSize.height)
+        )
         hostingView.frame = NSRect(origin: .zero, size: size)
 
         let item = NSMenuItem()
@@ -483,6 +486,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         LogManager.shared.log("Open about window")
         DispatchQueue.main.async {
             AboutWindowController.shared.show()
+        }
+    }
+
+    @objc private func openStatisticsDetail() {
+        LogManager.shared.log("Open traffic statistics detail window")
+        DispatchQueue.main.async {
+            TrafficStatisticsDetailWindowController.shared.show()
         }
     }
 
@@ -683,12 +693,15 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             newMenu.addItem(item)
         }
         newMenu.addItem(.separator())
+        let statisticsItem = NSMenuItem(title: LocalizationManager.shared.t("menu.statisticsDetail"), action: #selector(openStatisticsDetail), keyEquivalent: "")
+        statisticsItem.target = self
+        newMenu.addItem(statisticsItem)
         if processMonitor.isEnabled {
             let perAppItem = NSMenuItem(title: LocalizationManager.shared.t("menu.perAppTraffic"), action: #selector(openPerAppDetail), keyEquivalent: "")
             perAppItem.target = self
             newMenu.addItem(perAppItem)
-            newMenu.addItem(.separator())
         }
+        newMenu.addItem(.separator())
         let settingsItem = NSMenuItem(title: LocalizationManager.shared.t("menu.settings"), action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.keyEquivalentModifierMask = [.command]
         settingsItem.target = self

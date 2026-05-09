@@ -1,5 +1,5 @@
-import AppKit
 import SwiftUI
+import AppKit
 import Combine
 
 // MARK: - Date Range
@@ -101,7 +101,7 @@ final class PerAppTrafficViewModel: ObservableObject {
             return nil
         }
         let icon = NSWorkspace.shared.icon(forFile: appURL.path)
-        icon.size = NSSize(width: 16, height: 16)
+        icon.size = NSSize(width: 18, height: 18)
         return icon
     }
 }
@@ -132,7 +132,7 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
         window.title = LocalizationManager.shared.t("perApp.detail.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 520, height: 480))
+        window.setContentSize(NSSize(width: 720, height: 520))
         window.delegate = self
         return window
     }
@@ -187,6 +187,10 @@ struct PerAppTrafficDetailView: View {
     @State private var filterMode: PerAppFilterMode = .all
     @State private var dateRange: PerAppDateRange = .today
 
+    private let downloadColumnWidth: CGFloat = 96
+    private let uploadColumnWidth: CGFloat = 96
+    private let speedColumnWidth: CGFloat = 104
+
     private var isToday: Bool { dateRange == .today }
 
     private var sourceItems: [PerAppTrafficItem] {
@@ -236,168 +240,244 @@ struct PerAppTrafficDetailView: View {
         sortedItems.reduce(0) { $0 &+ $1.totalUploaded }
     }
 
-    private func dateRangeLabel(_ range: PerAppDateRange) -> String {
-        switch range {
-        case .today: return l10n.t("perApp.range.today")
-        case .last7Days: return l10n.t("perApp.range.last7Days")
-        case .last30Days: return l10n.t("perApp.range.last30Days")
-        case .allTime: return l10n.t("perApp.range.allTime")
+    private var sortOptions: [(String, PerAppSortMode)] {
+        var options: [(String, PerAppSortMode)] = [
+            (l10n.t("perApp.sort.total"), .totalDesc),
+            (l10n.t("perApp.sort.download"), .downloadDesc),
+            (l10n.t("perApp.sort.upload"), .uploadDesc)
+        ]
+        if isToday {
+            options.append((l10n.t("perApp.sort.downloadSpeed"), .downloadSpeedDesc))
+            options.append((l10n.t("perApp.sort.uploadSpeed"), .uploadSpeedDesc))
         }
+        return options
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Picker("", selection: $dateRange) {
-                    ForEach(PerAppDateRange.allCases, id: \.self) { range in
-                        Text(dateRangeLabel(range)).tag(range)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 110)
-
-                Text(String(format: l10n.t("perApp.appCount"), sortedItems.count))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Picker("", selection: $filterMode) {
-                    Text(l10n.t("perApp.filter.all")).tag(PerAppFilterMode.all)
-                    Text(l10n.t("perApp.filter.apps")).tag(PerAppFilterMode.appsOnly)
-                    Text(l10n.t("perApp.filter.processes")).tag(PerAppFilterMode.processesOnly)
-                }
-                .labelsHidden()
-                .frame(width: 110)
-                Picker("", selection: $sortMode) {
-                    Text(l10n.t("perApp.sort.total")).tag(PerAppSortMode.totalDesc)
-                    Text(l10n.t("perApp.sort.download")).tag(PerAppSortMode.downloadDesc)
-                    Text(l10n.t("perApp.sort.upload")).tag(PerAppSortMode.uploadDesc)
-                    if isToday {
-                        Text(l10n.t("perApp.sort.downloadSpeed")).tag(PerAppSortMode.downloadSpeedDesc)
-                        Text(l10n.t("perApp.sort.uploadSpeed")).tag(PerAppSortMode.uploadSpeedDesc)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 170)
-            }
-
-            // Summary row
-            HStack(spacing: 16) {
-                HStack(spacing: 4) {
-                    Text(l10n.t("perApp.summary.totalDownload") + ":")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(formatBytes(totalDownloaded))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.blue)
-                }
-                HStack(spacing: 4) {
-                    Text(l10n.t("perApp.summary.totalUpload") + ":")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(formatBytes(totalUploaded))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.orange)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 8)
-
-            if sortedItems.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "network.slash")
-                        .font(.system(size: 32))
-                        .foregroundStyle(.secondary)
-                    Text(l10n.t("perApp.noData"))
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 2) {
-                        HStack(spacing: 8) {
-                            Color.clear
-                                .frame(width: 20, height: 1)
-                            Text(l10n.t("perApp.header.app"))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(l10n.t("daily.download"))
-                                .frame(width: 80, alignment: .trailing)
-                            Text(l10n.t("daily.upload"))
-                                .frame(width: 80, alignment: .trailing)
-                            if isToday {
-                                Text(l10n.t("perApp.header.speed"))
-                                    .frame(width: 100, alignment: .trailing)
-                            }
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-
-                        ForEach(sortedItems) { item in
-                            detailRow(item)
-                        }
-                    }
-                    .padding(.trailing, 8)
-                }
-            }
+        VStack(spacing: 0) {
+            toolbar
+                .zIndex(10)
+            Divider()
+            summaryBar
+                .zIndex(1)
+            Divider()
+            content
+                .zIndex(0)
         }
-        .padding(16)
-        .frame(minWidth: 480, minHeight: 320)
+        .frame(minWidth: 640, minHeight: 420)
         .onChange(of: dateRange) { newRange in
             if newRange != .today {
                 viewModel.loadHistoricalData(range: newRange)
             }
-            if !isToday && (sortMode == .downloadSpeedDesc || sortMode == .uploadSpeedDesc) {
+            if newRange != .today && (sortMode == .downloadSpeedDesc || sortMode == .uploadSpeedDesc) {
                 sortMode = .totalDesc
             }
         }
     }
 
-    private func detailRow(_ item: PerAppTrafficItem) -> some View {
-        HStack(spacing: 8) {
-            if let icon = item.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: 20, height: 20)
-            } else {
-                Image(systemName: "app.dashed")
-                    .resizable()
-                    .frame(width: 20, height: 20)
-                    .foregroundStyle(.secondary)
-            }
+    private var toolbar: some View {
+        HStack(spacing: 12) {
+            FlowWatchSegmentedControl(
+                options: PerAppDateRange.allCases.map { (dateRangeLabel($0), $0) },
+                selection: $dateRange,
+                tint: .blue
+            )
 
-            Text(item.displayName)
-                .font(.system(size: 12))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            FlowWatchSegmentedControl(
+                options: [
+                    (l10n.t("perApp.filter.all"), .all),
+                    (l10n.t("perApp.filter.apps"), .appsOnly),
+                    (l10n.t("perApp.filter.processes"), .processesOnly)
+                ],
+                selection: $filterMode,
+                tint: .purple
+            )
+
+            Spacer(minLength: 12)
+
+            FlowWatchDropdownControl(
+                options: sortOptions,
+                selection: $sortMode,
+                tint: .blue,
+                width: 190,
+                style: .plain
+            )
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(.windowBackgroundColor))
+    }
+
+    private var summaryBar: some View {
+        HStack(spacing: 10) {
+            summaryMetric(
+                title: l10n.t("perApp.summary.totalDownload"),
+                value: formatBytes(totalDownloaded),
+                color: .blue
+            )
+            summaryMetric(
+                title: l10n.t("perApp.summary.totalUpload"),
+                value: formatBytes(totalUploaded),
+                color: .orange
+            )
+
+            Spacer()
+
+            Text(String(format: l10n.t("perApp.appCount"), sortedItems.count))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color(.controlBackgroundColor).opacity(0.30))
+    }
+
+    private func summaryMetric(title: String, value: String, color: Color) -> some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(.windowBackgroundColor).opacity(0.82), in: Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if sortedItems.isEmpty {
+            emptyState
+        } else {
+            tableView
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "network.slash")
+                .font(.system(size: 30, weight: .regular))
+                .foregroundStyle(.secondary)
+            Text(l10n.t("perApp.noData"))
+                .font(.body)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.windowBackgroundColor))
+    }
+
+    private var tableView: some View {
+        FlowWatchThinScrollView {
+            LazyVStack(spacing: 0, pinnedViews: []) {
+                tableHeader
+
+                ForEach(Array(sortedItems.enumerated()), id: \.element.id) { index, item in
+                    detailRow(item, isAlternate: index % 2 == 1)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .background(Color(.windowBackgroundColor))
+    }
+
+    private var tableHeader: some View {
+        HStack(spacing: 10) {
+            Text(l10n.t("perApp.header.app"))
                 .frame(maxWidth: .infinity, alignment: .leading)
+            Text(l10n.t("daily.download"))
+                .frame(width: downloadColumnWidth, alignment: .trailing)
+            Text(l10n.t("daily.upload"))
+                .frame(width: uploadColumnWidth, alignment: .trailing)
+            if isToday {
+                Text(l10n.t("perApp.header.speed"))
+                    .frame(width: speedColumnWidth, alignment: .trailing)
+            }
+        }
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 6)
+    }
+
+    private func detailRow(_ item: PerAppTrafficItem, isAlternate: Bool) -> some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                appIcon(for: item)
+
+                Text(item.displayName)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(formatBytes(item.totalDownloaded))
                 .font(.system(size: 11, design: .monospaced))
+                .monospacedDigit()
                 .foregroundStyle(.blue)
-                .frame(width: 80, alignment: .trailing)
+                .frame(width: downloadColumnWidth, alignment: .trailing)
 
             Text(formatBytes(item.totalUploaded))
                 .font(.system(size: 11, design: .monospaced))
+                .monospacedDigit()
                 .foregroundStyle(.orange)
-                .frame(width: 80, alignment: .trailing)
+                .frame(width: uploadColumnWidth, alignment: .trailing)
 
             if isToday {
-                VStack(alignment: .trailing, spacing: 0) {
-                    Text(formatSpeed(item.downloadBps) + "↓")
-                        .foregroundStyle(.blue.opacity(0.7))
-                    Text(formatSpeed(item.uploadBps) + "↑")
-                        .foregroundStyle(.orange.opacity(0.7))
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(formatSpeed(item.downloadBps) + " ↓")
+                        .foregroundStyle(.blue.opacity(0.78))
+                    Text(formatSpeed(item.uploadBps) + " ↑")
+                        .foregroundStyle(.orange.opacity(0.78))
                 }
-                .font(.system(size: 9, design: .monospaced))
-                .frame(width: 100, alignment: .trailing)
+                .font(.system(size: 10, design: .monospaced))
+                .monospacedDigit()
+                .frame(width: speedColumnWidth, alignment: .trailing)
             }
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .background(Color(.controlBackgroundColor).opacity(0.3), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            (isAlternate ? Color(.controlBackgroundColor).opacity(0.30) : Color.clear),
+            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+        )
+    }
+
+    private func appIcon(for item: PerAppTrafficItem) -> some View {
+        Group {
+            if let icon = item.icon {
+                Image(nsImage: icon)
+                    .resizable()
+            } else {
+                Image(systemName: "app.dashed")
+                    .resizable()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 20, height: 20)
+    }
+
+    private func dateRangeLabel(_ range: PerAppDateRange) -> String {
+        switch range {
+        case .today:
+            return l10n.t("perApp.range.today")
+        case .last7Days:
+            return l10n.t("perApp.range.last7Days")
+        case .last30Days:
+            return l10n.t("perApp.range.last30Days")
+        case .allTime:
+            return l10n.t("perApp.range.allTime")
+        }
     }
 
     private func formatBytes(_ bytes: UInt64) -> String {
@@ -414,15 +494,15 @@ struct PerAppTrafficDetailView: View {
     }
 
     private func formatSpeed(_ bytesPerSecond: Double) -> String {
-        let kb = bytesPerSecond / 1024
+        let kb = max(bytesPerSecond, 0) / 1024
         if kb >= 1024 {
-            return String(format: "%.1fM/s", kb / 1024)
+            return String(format: "%.1f MB/s", kb / 1024)
         } else if kb >= 1 {
-            return String(format: "%.0fK/s", kb)
+            return String(format: "%.0f KB/s", kb)
         } else if bytesPerSecond > 0 {
-            return String(format: "%.0fB/s", bytesPerSecond)
+            return String(format: "%.0f B/s", bytesPerSecond)
         } else {
-            return "0"
+            return "0 KB/s"
         }
     }
 }

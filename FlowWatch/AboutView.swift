@@ -5,29 +5,31 @@ struct AboutView: View {
     @EnvironmentObject private var l10n: LocalizationManager
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: 64, height: 64)
-                .cornerRadius(14)
-                .shadow(radius: 2)
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
-            Text(appName)
-                .font(.title3.weight(.semibold))
+            VStack(spacing: 4) {
+                Text(appName)
+                    .font(.title3.weight(.semibold))
 
-            Text(AppVersion.displayString)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                Text(AppVersion.displayString)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
 
             Button {
                 openGitHub()
             } label: {
                 Label(l10n.t("about.github"), systemImage: "link")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(FlowWatchActionButtonStyle(tint: .blue))
         }
-        .padding(24)
-        .frame(minWidth: 320, minHeight: 240)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 26)
+        .frame(minWidth: 340, minHeight: 250)
     }
 
     private var appName: String {
