@@ -78,6 +78,7 @@ struct TrafficStatisticsDetailView: View {
                     sidebarRow(section)
                 }
             }
+            .frame(maxWidth: .infinity)
 
             Spacer(minLength: 0)
         }
@@ -145,8 +146,11 @@ struct TrafficStatisticsDetailView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(isSelected ? section.tint.opacity(0.20) : Color.secondary.opacity(0.08), lineWidth: 1)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var detailPane: some View {

@@ -299,7 +299,8 @@ struct PerAppTrafficDetailView: View {
                 options: sortOptions,
                 selection: $sortMode,
                 tint: .blue,
-                width: 190
+                width: 190,
+                style: .plain
             )
         }
         .padding(.horizontal, 16)
