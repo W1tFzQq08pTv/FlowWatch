@@ -10,8 +10,9 @@
 
 ## Features
 - Real-time upload/download speed in the menu bar
-- Today/total traffic stats and charts (Charts, macOS 13+)
-- Per-app traffic monitoring: track network usage by app with date range filtering
+- Menu popup with current speed, today's total, and a 7-day trend chart (Charts, macOS 13+)
+- Dedicated statistics details window with overview, trends, and fun stats sections
+- Per-app traffic monitoring with date range filters and sorting
 - Custom sampling interval and display style
 - Automatic update checks with last/next check time
 - Optional file logging (daily logs, kept for 7 days)
@@ -21,6 +22,13 @@
 - Settings and daily totals are stored on your device only (UserDefaults).
 - Logs (if enabled) are written locally and never uploaded or synced.
 - No account is required, and the app does not upload or sync your data.
+
+## Statistics Details
+The statistics details window keeps the main popup focused while providing a fuller view of historical traffic.
+
+- Overview: total download, total upload, total traffic, recorded days, and active days
+- Trends: 7-day total, 7-day daily average, historical daily average, today vs yesterday, and peak day
+- Fun stats: traffic title, upload/download ratio, download share, most active date, and latest active day
 
 ## Install
 ### Homebrew
@@ -38,6 +46,10 @@ Download the latest DMG from GitHub Releases:
 | --- | --- | --- |
 | <img src=".github/assets/statusbar-speed.png" width="260" alt="Status bar speed" /> | <img src=".github/assets/statusbar-today.png" width="260" alt="Status bar today" /> | <img src=".github/assets/statusbar-speed-today.png" width="260" alt="Status bar speed and today" /> |
 
-| Settings | Popup | Per-App Traffic |
-| --- | --- | --- |
-| <img src=".github/assets/settings-en.png" width="300" alt="Settings" /> | <img src=".github/assets/popup-en.png" width="300" alt="Popup" /> | <img src=".github/assets/perapp-traffic-en.png" width="300" alt="Per-App Traffic" /> |
+| Menu Popup | Statistics Details |
+| --- | --- |
+| <img src=".github/assets/popup-en.png" width="360" alt="Menu Popup" /> | <img src=".github/assets/statistics-en.png" width="520" alt="Statistics Details" /> |
+
+| Per-App Traffic | Settings |
+| --- | --- |
+| <img src=".github/assets/perapp-traffic-en.png" width="520" alt="Per-App Traffic" /> | <img src=".github/assets/settings-en.png" width="520" alt="Settings" /> |
