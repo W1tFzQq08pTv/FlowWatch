@@ -25,7 +25,7 @@ struct AboutView: View {
             } label: {
                 Label(l10n.t("about.github"), systemImage: "link")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(FlowWatchActionButtonStyle(tint: .blue))
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 26)

@@ -68,6 +68,7 @@ struct TrafficStatisticsDetailView: View {
             }
             .padding(20)
         }
+        .scrollIndicators(.hidden)
         .background(Color(nsColor: .windowBackgroundColor))
         .frame(minWidth: 520, minHeight: 540)
         .onAppear {

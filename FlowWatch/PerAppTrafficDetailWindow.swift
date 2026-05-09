@@ -240,6 +240,19 @@ struct PerAppTrafficDetailView: View {
         sortedItems.reduce(0) { $0 &+ $1.totalUploaded }
     }
 
+    private var sortOptions: [(String, PerAppSortMode)] {
+        var options: [(String, PerAppSortMode)] = [
+            (l10n.t("perApp.sort.total"), .totalDesc),
+            (l10n.t("perApp.sort.download"), .downloadDesc),
+            (l10n.t("perApp.sort.upload"), .uploadDesc)
+        ]
+        if isToday {
+            options.append((l10n.t("perApp.sort.downloadSpeed"), .downloadSpeedDesc))
+            options.append((l10n.t("perApp.sort.uploadSpeed"), .uploadSpeedDesc))
+        }
+        return options
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -261,39 +274,31 @@ struct PerAppTrafficDetailView: View {
 
     private var toolbar: some View {
         HStack(spacing: 12) {
-            Picker("", selection: $dateRange) {
-                ForEach(PerAppDateRange.allCases, id: \.self) { range in
-                    Text(dateRangeLabel(range)).tag(range)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .frame(width: 280)
+            FlowWatchSegmentedControl(
+                options: PerAppDateRange.allCases.map { (dateRangeLabel($0), $0) },
+                selection: $dateRange,
+                tint: .blue
+            )
 
-            Picker("", selection: $filterMode) {
-                Text(l10n.t("perApp.filter.all")).tag(PerAppFilterMode.all)
-                Text(l10n.t("perApp.filter.apps")).tag(PerAppFilterMode.appsOnly)
-                Text(l10n.t("perApp.filter.processes")).tag(PerAppFilterMode.processesOnly)
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .frame(width: 210)
+            FlowWatchSegmentedControl(
+                options: [
+                    (l10n.t("perApp.filter.all"), .all),
+                    (l10n.t("perApp.filter.apps"), .appsOnly),
+                    (l10n.t("perApp.filter.processes"), .processesOnly)
+                ],
+                selection: $filterMode,
+                tint: .purple
+            )
 
             Spacer(minLength: 12)
 
-            Picker("", selection: $sortMode) {
-                Text(l10n.t("perApp.sort.total")).tag(PerAppSortMode.totalDesc)
-                Text(l10n.t("perApp.sort.download")).tag(PerAppSortMode.downloadDesc)
-                Text(l10n.t("perApp.sort.upload")).tag(PerAppSortMode.uploadDesc)
-                if isToday {
-                    Text(l10n.t("perApp.sort.downloadSpeed")).tag(PerAppSortMode.downloadSpeedDesc)
-                    Text(l10n.t("perApp.sort.uploadSpeed")).tag(PerAppSortMode.uploadSpeedDesc)
-                }
-            }
-            .labelsHidden()
-            .frame(width: 170)
+            FlowWatchDropdownControl(
+                options: sortOptions,
+                selection: $sortMode,
+                tint: .blue,
+                width: 190
+            )
         }
-        .controlSize(.small)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Color(.windowBackgroundColor))
@@ -378,6 +383,7 @@ struct PerAppTrafficDetailView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
+        .scrollIndicators(.hidden)
         .background(Color(.windowBackgroundColor))
     }
 

@@ -37,6 +37,7 @@ struct SettingsView: View {
                 .padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .scrollIndicators(.hidden)
             .background(Color(.textBackgroundColor).opacity(0.28))
         }
         .frame(minWidth: 860, minHeight: 580)
