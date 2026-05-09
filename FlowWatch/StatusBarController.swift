@@ -459,12 +459,15 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private func makeDailyTrafficMenuItem() -> NSMenuItem {
         let hostingView = NSHostingView(
-            rootView: LocalizedRootView { DailyTrafficView() }
+            rootView: LocalizedRootView { DailyTrafficView(monitor: monitor) }
                 .environmentObject(LocalizationManager.shared)
         )
         hostingView.layoutSubtreeIfNeeded()
-        var size = hostingView.fittingSize
-        size.height += 36
+        let fittingSize = hostingView.fittingSize
+        let size = NSSize(
+            width: ceil(fittingSize.width),
+            height: ceil(fittingSize.height)
+        )
         hostingView.frame = NSRect(origin: .zero, size: size)
 
         let item = NSMenuItem()
