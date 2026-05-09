@@ -23,8 +23,8 @@ final class TrafficStatisticsDetailWindowController: NSWindowController, NSWindo
         window.title = LocalizationManager.shared.t("statistics.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 560, height: 680))
-        window.minSize = NSSize(width: 520, height: 540)
+        window.setContentSize(NSSize(width: 720, height: 560))
+        window.minSize = NSSize(width: 660, height: 500)
         window.delegate = self
         return window
     }
@@ -48,47 +48,140 @@ final class TrafficStatisticsDetailWindowController: NSWindowController, NSWindo
 struct TrafficStatisticsDetailView: View {
     @EnvironmentObject private var l10n: LocalizationManager
     @StateObject private var viewModel = TrafficStatisticsDetailViewModel()
+    @State private var selectedSection: StatisticsSection = .overview
 
     private var summary: TrafficStatisticsSummary {
         viewModel.summary
     }
 
     var body: some View {
-        FlowWatchThinScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
+        HStack(spacing: 0) {
+            sidebar
 
-                if !summary.hasData {
-                    emptyState
-                }
+            Divider()
 
-                overviewSection
-                trendSection
-                funSection
-            }
-            .padding(20)
+            detailPane
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .frame(minWidth: 520, minHeight: 540)
+        .frame(minWidth: 660, minHeight: 500)
         .onAppear {
             viewModel.reload()
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: 14) {
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sidebarHeader
+
+            VStack(spacing: 6) {
+                ForEach(StatisticsSection.allCases) { section in
+                    sidebarRow(section)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(width: 218)
+        .background(.regularMaterial)
+    }
+
+    private var sidebarHeader: some View {
+        HStack(spacing: 10) {
             Image(systemName: "chart.bar.xaxis")
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.blue)
-                .frame(width: 44, height: 44)
-                .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .frame(width: 32, height: 32)
+                .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(l10n.t("statistics.title"))
+                    .font(.system(size: 14, weight: .semibold))
+                Text(l10n.t("statistics.sidebar.subtitle"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.top, 2)
+    }
+
+    private func sidebarRow(_ section: StatisticsSection) -> some View {
+        let isSelected = selectedSection == section
+
+        return Button {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                selectedSection = section
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: section.systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.white : section.tint)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(l10n.t(section.titleKey))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                        .lineLimit(1)
+
+                    Text(l10n.t(section.subtitleKey))
+                        .font(.caption2)
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.78) : Color.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                isSelected ? section.tint : Color.clear,
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? section.tint.opacity(0.20) : Color.secondary.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var detailPane: some View {
+        FlowWatchThinScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                detailHeader
+
+                if !summary.hasData {
+                    emptyState
+                }
+
+                selectedContent
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 22)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .background(Color(.textBackgroundColor).opacity(0.24))
+    }
+
+    private var detailHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: selectedSection.systemImage)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(selectedSection.tint)
+                .frame(width: 44, height: 44)
+                .background(selectedSection.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(l10n.t(selectedSection.titleKey))
                     .font(.system(size: 24, weight: .semibold))
-                Text(l10n.t("statistics.subtitle"))
+                Text(l10n.t(selectedSection.descriptionKey))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
 
             Spacer()
@@ -103,6 +196,18 @@ struct TrafficStatisticsDetailView: View {
                     Capsule()
                         .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
                 )
+        }
+    }
+
+    @ViewBuilder
+    private var selectedContent: some View {
+        switch selectedSection {
+        case .overview:
+            overviewSection
+        case .trends:
+            trendSection
+        case .fun:
+            funSection
         }
     }
 
@@ -502,6 +607,69 @@ private final class TrafficStatisticsDetailViewModel: ObservableObject {
 
     func reload() {
         summary = TrafficStatisticsSummary(records: storage.getAllRecords())
+    }
+}
+
+private enum StatisticsSection: String, CaseIterable, Identifiable {
+    case overview
+    case trends
+    case fun
+
+    var id: Self { self }
+
+    var titleKey: String {
+        switch self {
+        case .overview:
+            return "statistics.section.overview"
+        case .trends:
+            return "statistics.section.trends"
+        case .fun:
+            return "statistics.section.fun"
+        }
+    }
+
+    var subtitleKey: String {
+        switch self {
+        case .overview:
+            return "statistics.section.overview.subtitle"
+        case .trends:
+            return "statistics.section.trends.subtitle"
+        case .fun:
+            return "statistics.section.fun.subtitle"
+        }
+    }
+
+    var descriptionKey: String {
+        switch self {
+        case .overview:
+            return "statistics.section.overview.description"
+        case .trends:
+            return "statistics.section.trends.description"
+        case .fun:
+            return "statistics.section.fun.description"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .overview:
+            return "square.grid.2x2"
+        case .trends:
+            return "chart.xyaxis.line"
+        case .fun:
+            return "sparkles"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .overview:
+            return .blue
+        case .trends:
+            return .purple
+        case .fun:
+            return .pink
+        }
     }
 }
 

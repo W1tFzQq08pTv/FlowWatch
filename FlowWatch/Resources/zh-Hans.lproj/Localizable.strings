@@ -75,10 +75,18 @@
 
 "statistics.title" = "统计详情";
 "statistics.subtitle" = "历史流量、趋势和轻量趣味统计";
+"statistics.sidebar.subtitle" = "统计面板";
 "statistics.empty.title" = "暂无历史数据";
 "statistics.empty.subtitle" = "开始使用后，这里会显示每天累计的下载和上传。";
 "statistics.section.overview" = "总览";
+"statistics.section.overview.subtitle" = "累计与天数";
+"statistics.section.overview.description" = "查看全部历史、今日、昨日和记录天数。";
 "statistics.section.trends" = "趋势";
+"statistics.section.trends.subtitle" = "日均与峰值";
+"statistics.section.trends.description" = "查看近 7 天、近 30 天、日均变化和峰值日期。";
+"statistics.section.fun" = "趣味统计";
+"statistics.section.fun.subtitle" = "称号与习惯";
+"statistics.section.fun.description" = "查看称号、上传下载占比、连续活跃和最活跃日期。";
 "statistics.range.allHistory" = "全部历史";
 "statistics.range.last7Days" = "近 7 天";
 "statistics.range.last30Days" = "近 30 天";

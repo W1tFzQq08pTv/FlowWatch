@@ -75,10 +75,18 @@
 
 "statistics.title" = "Statistics Details";
 "statistics.subtitle" = "History, trends, and lightweight fun stats";
+"statistics.sidebar.subtitle" = "Stats panel";
 "statistics.empty.title" = "No history yet";
 "statistics.empty.subtitle" = "Daily download and upload totals will appear here once FlowWatch records traffic.";
 "statistics.section.overview" = "Overview";
+"statistics.section.overview.subtitle" = "Totals and days";
+"statistics.section.overview.description" = "Review all-time totals, today, yesterday, and recorded days.";
 "statistics.section.trends" = "Trends";
+"statistics.section.trends.subtitle" = "Averages and peaks";
+"statistics.section.trends.description" = "Review 7-day and 30-day totals, averages, changes, and peak days.";
+"statistics.section.fun" = "Fun stats";
+"statistics.section.fun.subtitle" = "Persona and habits";
+"statistics.section.fun.description" = "Review persona, upload/download share, active streaks, and most active dates.";
 "statistics.range.allHistory" = "All history";
 "statistics.range.last7Days" = "Last 7 days";
 "statistics.range.last30Days" = "Last 30 days";
