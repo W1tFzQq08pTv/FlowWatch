@@ -22,7 +22,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.title = LocalizationManager.shared.t("settings.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 520, height: 620))
+        window.setContentSize(NSSize(width: 900, height: 600))
         window.delegate = self
         return window
     }
