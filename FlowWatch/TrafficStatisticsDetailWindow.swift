@@ -1,0 +1,580 @@
+import AppKit
+import SwiftUI
+
+final class TrafficStatisticsDetailWindowController: NSWindowController, NSWindowDelegate {
+    static let shared = TrafficStatisticsDetailWindowController()
+
+    private init() {
+        super.init(window: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    private func makeWindow() -> NSWindow {
+        let hostingController = NSHostingController(
+            rootView: LocalizedRootView { TrafficStatisticsDetailView() }
+                .environmentObject(LocalizationManager.shared)
+        )
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = LocalizationManager.shared.t("statistics.title")
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.isReleasedWhenClosed = false
+        window.setContentSize(NSSize(width: 520, height: 560))
+        window.minSize = NSSize(width: 480, height: 480)
+        window.delegate = self
+        return window
+    }
+
+    func show() {
+        if window == nil {
+            self.window = makeWindow()
+        }
+        window?.title = LocalizationManager.shared.t("statistics.title")
+        NSApp.activate(ignoringOtherApps: true)
+        window?.center()
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        window?.contentViewController = nil
+        window = nil
+    }
+}
+
+struct TrafficStatisticsDetailView: View {
+    @EnvironmentObject private var l10n: LocalizationManager
+    @StateObject private var viewModel = TrafficStatisticsDetailViewModel()
+
+    private var summary: TrafficStatisticsSummary {
+        viewModel.summary
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+
+                if !summary.hasData {
+                    emptyState
+                }
+
+                overviewSection
+                trendSection
+                funSection
+            }
+            .padding(20)
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(minWidth: 480, minHeight: 480)
+        .onAppear {
+            viewModel.reload()
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: "chart.bar.xaxis")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.blue)
+                .frame(width: 44, height: 44)
+                .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(l10n.t("statistics.title"))
+                    .font(.system(size: 24, weight: .semibold))
+                Text(l10n.t("statistics.subtitle"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text(l10n.t("settings.data.localOnly"))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color(.controlBackgroundColor).opacity(0.65), in: Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+                )
+        }
+    }
+
+    private var emptyState: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "tray")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 36, height: 36)
+                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(l10n.t("statistics.empty.title"))
+                    .font(.headline)
+                Text(l10n.t("statistics.empty.subtitle"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(Color(.controlBackgroundColor).opacity(0.50), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        )
+    }
+
+    private var overviewSection: some View {
+        statisticsPanel(title: l10n.t("statistics.section.overview"), systemImage: "square.grid.2x2") {
+            LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
+                metricCard(
+                    title: l10n.t("statistics.overview.totalDownload"),
+                    value: TrafficStatsFormatter.bytes(summary.totalDownloaded),
+                    caption: l10n.t("daily.download"),
+                    tint: .blue
+                )
+                metricCard(
+                    title: l10n.t("statistics.overview.totalUpload"),
+                    value: TrafficStatsFormatter.bytes(summary.totalUploaded),
+                    caption: l10n.t("daily.upload"),
+                    tint: .orange
+                )
+                metricCard(
+                    title: l10n.t("statistics.overview.totalTraffic"),
+                    value: TrafficStatsFormatter.bytes(summary.totalBytes),
+                    caption: l10n.t("statistics.range.allHistory"),
+                    tint: .purple
+                )
+                metricCard(
+                    title: l10n.t("statistics.overview.recordDays"),
+                    value: String(format: l10n.t("statistics.value.days"), summary.recordDays),
+                    caption: l10n.t("daily.section.allHistory"),
+                    tint: .green
+                )
+                metricCard(
+                    title: l10n.t("statistics.overview.activeDays"),
+                    value: String(format: l10n.t("statistics.value.days"), summary.activeDays),
+                    caption: l10n.t("daily.fun.activeDays.subtitle"),
+                    tint: .teal
+                )
+            }
+        }
+    }
+
+    private var trendSection: some View {
+        statisticsPanel(title: l10n.t("statistics.section.trends"), systemImage: "chart.xyaxis.line") {
+            VStack(spacing: 8) {
+                detailRow(
+                    title: l10n.t("statistics.trend.last7Total"),
+                    value: TrafficStatsFormatter.bytes(summary.last7TotalBytes),
+                    caption: l10n.t("statistics.range.last7Days"),
+                    tint: .blue
+                )
+                detailRow(
+                    title: l10n.t("statistics.trend.last7Average"),
+                    value: TrafficStatsFormatter.bytes(summary.last7AverageBytes),
+                    caption: l10n.t("statistics.trend.naturalDays"),
+                    tint: .indigo
+                )
+                detailRow(
+                    title: l10n.t("statistics.trend.historyAverage"),
+                    value: TrafficStatsFormatter.bytes(summary.historyAverageBytes),
+                    caption: l10n.t("daily.section.allHistory"),
+                    tint: .purple
+                )
+                detailRow(
+                    title: l10n.t("daily.fun.dayOverDay.title"),
+                    value: dayOverDayValue,
+                    caption: l10n.t("statistics.trend.dayOverDay.caption"),
+                    tint: dayOverDayTint
+                )
+                detailRow(
+                    title: l10n.t("daily.fun.peak.title"),
+                    value: TrafficStatsFormatter.bytes(summary.last7Peak?.bytes ?? 0),
+                    caption: summary.last7Peak.map { dateText($0.date) } ?? l10n.t("daily.peak.noData"),
+                    tint: .orange
+                )
+            }
+        }
+    }
+
+    private var funSection: some View {
+        statisticsPanel(title: l10n.t("daily.fun.title"), systemImage: "sparkles") {
+            VStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    Image(systemName: "person.crop.circle.badge.checkmark")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.pink)
+                        .frame(width: 42, height: 42)
+                        .background(Color.pink.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(personaTitle)
+                            .font(.system(size: 18, weight: .semibold))
+                        Text(String(format: l10n.t("statistics.fun.personaSubtitle"), TrafficStatsFormatter.bytes(summary.last7TotalBytes)))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+                }
+                .padding(12)
+                .background(Color(.controlBackgroundColor).opacity(0.48), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
+                    metricCard(
+                        title: l10n.t("daily.fun.coefficient.title"),
+                        value: TrafficStatsFormatter.ratio(upload: summary.last7Uploaded, download: summary.last7Downloaded),
+                        caption: l10n.t("daily.fun.coefficient.subtitle"),
+                        tint: .purple
+                    )
+                    metricCard(
+                        title: l10n.t("statistics.fun.downloadShare"),
+                        value: TrafficStatsFormatter.percent(summary.last7DownloadShare),
+                        caption: l10n.t("statistics.range.last7Days"),
+                        tint: .blue
+                    )
+                    metricCard(
+                        title: l10n.t("statistics.fun.mostActiveDate"),
+                        value: dateText(summary.mostActiveDate?.date),
+                        caption: summary.mostActiveDate.map { TrafficStatsFormatter.bytes($0.bytes) } ?? l10n.t("daily.peak.noData"),
+                        tint: .orange
+                    )
+                    metricCard(
+                        title: l10n.t("statistics.fun.recentActiveDate"),
+                        value: dateText(summary.recentActiveDate),
+                        caption: l10n.t("statistics.fun.recentActive.caption"),
+                        tint: .green
+                    )
+                }
+            }
+        }
+    }
+
+    private var gridColumns: [GridItem] {
+        [
+            GridItem(.flexible(minimum: 180), spacing: 10),
+            GridItem(.flexible(minimum: 180), spacing: 10)
+        ]
+    }
+
+    private func statisticsPanel<Content: View>(
+        title: String,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            content()
+        }
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func metricCard(title: String, value: String, caption: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(tint)
+                    .frame(width: 7, height: 7)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Text(value)
+                .font(.system(size: 18, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.80)
+
+            Text(caption)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 90, alignment: .leading)
+        .background(Color(.controlBackgroundColor).opacity(0.42), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.secondary.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func detailRow(title: String, value: String, caption: String, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(tint)
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text(value)
+                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.80)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(.controlBackgroundColor).opacity(0.36), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    private var personaTitle: String {
+        guard summary.last7TotalBytes > 0 else {
+            return l10n.t("daily.persona.diver")
+        }
+
+        let totalGB = Double(summary.last7TotalBytes) / 1_073_741_824
+        let tierKey: String
+        if totalGB >= 50 {
+            tierKey = "daily.persona.tier.heavy"
+        } else if totalGB >= 10 {
+            tierKey = "daily.persona.tier.active"
+        } else {
+            tierKey = "daily.persona.tier.light"
+        }
+
+        let roleKey: String
+        if summary.last7Downloaded == 0 && summary.last7Uploaded > 0 {
+            roleKey = "daily.persona.role.uploader"
+        } else {
+            let ratio = Double(summary.last7Uploaded) / max(Double(summary.last7Downloaded), 1)
+            if ratio >= 2 {
+                roleKey = "daily.persona.role.uploader"
+            } else if ratio <= 0.5 {
+                roleKey = "daily.persona.role.downloader"
+            } else {
+                roleKey = "daily.persona.role.balanced"
+            }
+        }
+
+        return l10n.t(tierKey) + l10n.t(roleKey)
+    }
+
+    private var dayOverDayValue: String {
+        switch summary.dayOverDay {
+        case .even:
+            return l10n.t("daily.dayOverDay.even")
+        case .increased(let bytes):
+            return "+\(TrafficStatsFormatter.bytes(bytes))"
+        case .decreased(let bytes):
+            return "-\(TrafficStatsFormatter.bytes(bytes))"
+        }
+    }
+
+    private var dayOverDayTint: Color {
+        switch summary.dayOverDay {
+        case .even:
+            return .secondary
+        case .increased:
+            return .green
+        case .decreased:
+            return .red
+        }
+    }
+
+    private func dateText(_ date: Date?) -> String {
+        guard let date else {
+            return l10n.t("statistics.value.none")
+        }
+        let formatter = DateFormatter()
+        formatter.locale = l10n.locale
+        formatter.dateFormat = "MM/dd"
+        return formatter.string(from: date)
+    }
+}
+
+private final class TrafficStatisticsDetailViewModel: ObservableObject {
+    @Published private(set) var summary = TrafficStatisticsSummary.empty
+
+    private let storage: DailyTrafficStorage
+
+    init(storage: DailyTrafficStorage = .shared) {
+        self.storage = storage
+        reload()
+    }
+
+    func reload() {
+        summary = TrafficStatisticsSummary(records: storage.getAllRecords())
+    }
+}
+
+private struct TrafficStatisticsSummary {
+    let totalDownloaded: UInt64
+    let totalUploaded: UInt64
+    let totalBytes: UInt64
+    let recordDays: Int
+    let activeDays: Int
+    let last7Downloaded: UInt64
+    let last7Uploaded: UInt64
+    let last7TotalBytes: UInt64
+    let last7AverageBytes: UInt64
+    let historyAverageBytes: UInt64
+    let last7DownloadShare: Double
+    let dayOverDay: TrafficDayOverDay
+    let last7Peak: TrafficDayHighlight?
+    let mostActiveDate: TrafficDayHighlight?
+    let recentActiveDate: Date?
+
+    var hasData: Bool {
+        totalBytes > 0
+    }
+
+    static let empty = TrafficStatisticsSummary(records: [])
+
+    init(records: [DailyTrafficRecord]) {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var recordsById: [String: DailyTrafficRecord] = [:]
+        for record in records {
+            recordsById[record.id] = record
+        }
+        let recentRecords = (0..<7).reversed().compactMap { dayOffset -> DailyTrafficRecord? in
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else {
+                return nil
+            }
+            let emptyRecord = DailyTrafficRecord(date: date)
+            return recordsById[emptyRecord.id] ?? emptyRecord
+        }
+
+        totalDownloaded = records.reduce(0) { $0 &+ $1.downloadBytes }
+        totalUploaded = records.reduce(0) { $0 &+ $1.uploadBytes }
+        totalBytes = totalDownloaded &+ totalUploaded
+        recordDays = records.count
+        activeDays = records.filter { Self.totalBytes(for: $0) > 0 }.count
+
+        last7Downloaded = recentRecords.reduce(0) { $0 &+ $1.downloadBytes }
+        last7Uploaded = recentRecords.reduce(0) { $0 &+ $1.uploadBytes }
+        last7TotalBytes = last7Downloaded &+ last7Uploaded
+        last7AverageBytes = last7TotalBytes / 7
+        historyAverageBytes = recordDays > 0 ? totalBytes / UInt64(recordDays) : 0
+        last7DownloadShare = last7TotalBytes > 0 ? Double(last7Downloaded) / Double(last7TotalBytes) : 0
+
+        if let todayRecord = recentRecords.last, recentRecords.count >= 2 {
+            let yesterdayRecord = recentRecords[recentRecords.count - 2]
+            dayOverDay = Self.makeDayOverDay(today: todayRecord, yesterday: yesterdayRecord)
+        } else {
+            dayOverDay = .even
+        }
+
+        last7Peak = Self.highlight(from: recentRecords)
+        mostActiveDate = Self.highlight(from: records)
+        recentActiveDate = records
+            .filter { Self.totalBytes(for: $0) > 0 }
+            .max(by: { $0.date < $1.date })?
+            .date
+    }
+
+    private static func highlight(from records: [DailyTrafficRecord]) -> TrafficDayHighlight? {
+        guard let record = records
+            .filter({ totalBytes(for: $0) > 0 })
+            .max(by: { totalBytes(for: $0) < totalBytes(for: $1) }) else {
+            return nil
+        }
+        return TrafficDayHighlight(date: record.date, bytes: totalBytes(for: record))
+    }
+
+    private static func makeDayOverDay(today: DailyTrafficRecord, yesterday: DailyTrafficRecord) -> TrafficDayOverDay {
+        let todayTotal = totalBytes(for: today)
+        let yesterdayTotal = totalBytes(for: yesterday)
+        if todayTotal == yesterdayTotal {
+            return .even
+        }
+        if todayTotal > yesterdayTotal {
+            return .increased(todayTotal - yesterdayTotal)
+        }
+        return .decreased(yesterdayTotal - todayTotal)
+    }
+
+    private static func totalBytes(for record: DailyTrafficRecord) -> UInt64 {
+        record.downloadBytes &+ record.uploadBytes
+    }
+}
+
+private struct TrafficDayHighlight {
+    let date: Date
+    let bytes: UInt64
+}
+
+private enum TrafficDayOverDay {
+    case even
+    case increased(UInt64)
+    case decreased(UInt64)
+}
+
+private enum TrafficStatsFormatter {
+    static func bytes(_ bytes: UInt64) -> String {
+        format(Double(bytes))
+    }
+
+    static func percent(_ value: Double) -> String {
+        String(format: "%.0f%%", max(0, min(value, 1)) * 100)
+    }
+
+    static func ratio(upload: UInt64, download: UInt64) -> String {
+        if upload == 0 && download == 0 {
+            return "0.00x"
+        }
+        if download == 0 {
+            return "∞"
+        }
+        return String(format: "%.2fx", Double(upload) / Double(download))
+    }
+
+    private static func format(_ bytes: Double) -> String {
+        let units = ["B", "K", "M", "G", "T"]
+        var value = max(bytes, 0)
+        var unitIndex = 0
+
+        while value >= 1024 && unitIndex < units.count - 1 {
+            value /= 1024
+            unitIndex += 1
+        }
+
+        let stringValue: String
+        if value >= 100 {
+            stringValue = String(format: "%.0f", value.rounded())
+        } else if value >= 10 {
+            stringValue = String(format: "%.1f", value)
+        } else if unitIndex == 0 {
+            stringValue = String(format: "%.0f", value)
+        } else {
+            stringValue = String(format: "%.1f", value)
+        }
+
+        return "\(stringValue) \(units[unitIndex])"
+    }
+}
+
+#if DEBUG
+#Preview {
+    TrafficStatisticsDetailView()
+        .environmentObject(LocalizationManager.shared)
+        .environment(\.locale, LocalizationManager.shared.locale)
+}
+#endif

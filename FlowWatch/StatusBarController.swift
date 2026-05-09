@@ -489,6 +489,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         }
     }
 
+    @objc private func openStatisticsDetail() {
+        LogManager.shared.log("Open traffic statistics detail window")
+        DispatchQueue.main.async {
+            TrafficStatisticsDetailWindowController.shared.show()
+        }
+    }
+
     @objc private func checkForUpdates() {
         LogManager.shared.log("Check for updates from status bar")
         if updateManager.performCachedUpdateAction() {
@@ -686,12 +693,15 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             newMenu.addItem(item)
         }
         newMenu.addItem(.separator())
+        let statisticsItem = NSMenuItem(title: LocalizationManager.shared.t("menu.statisticsDetail"), action: #selector(openStatisticsDetail), keyEquivalent: "")
+        statisticsItem.target = self
+        newMenu.addItem(statisticsItem)
         if processMonitor.isEnabled {
             let perAppItem = NSMenuItem(title: LocalizationManager.shared.t("menu.perAppTraffic"), action: #selector(openPerAppDetail), keyEquivalent: "")
             perAppItem.target = self
             newMenu.addItem(perAppItem)
-            newMenu.addItem(.separator())
         }
+        newMenu.addItem(.separator())
         let settingsItem = NSMenuItem(title: LocalizationManager.shared.t("menu.settings"), action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.keyEquivalentModifierMask = [.command]
         settingsItem.target = self
