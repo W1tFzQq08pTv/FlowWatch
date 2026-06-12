@@ -49,6 +49,9 @@
 "settings.displayMode.speed" = "速率";
 "settings.displayMode.total" = "今日累计";
 "settings.displayMode.both" = "都显示";
+"settings.displayMode.minimalSignal" = "极简信号";
+"settings.minimalSignal.showTotals" = "显示上下行统计";
+"settings.minimalSignal.showTotals.desc" = "在极简信号旁显示今日上传和下载累计流量。";
 
 "settings.maxColorRate.limitTitle" = "上色上限";
 "settings.maxColorRate.intensityTitle" = "上色强度";

@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("perAppMonitoring.sampleInterval") private var perAppSampleInterval: Double = 3.0
     @AppStorage("statusBar.sampleInterval") private var sampleInterval: Double = 5.0
     @AppStorage("statusBarSmoothTransition") private var smoothTransition: Bool = true
+    @AppStorage("minimalSignalShowsTrafficTotals") private var minimalSignalShowsTrafficTotals: Bool = true
     @AppStorage("logging.enabled") private var loggingEnabled: Bool = true
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var selectedSection: SettingsSection? = .general
@@ -84,22 +85,6 @@ struct SettingsView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .frame(width: 32, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("FlowWatch")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text(l10n.t("settings.sidebar.subtitle"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 6)
-            .padding(.top, 2)
-
             VStack(spacing: 6) {
                 ForEach(SettingsSection.allCases) { section in
                     sidebarRow(section)
@@ -233,6 +218,15 @@ struct SettingsView: View {
                         FlowWatchApp.StatusBarDisplayMode.allCases.map { (l10n.t($0.titleKey), $0.rawValue) },
                         selection: $statusBarDisplayModeRaw
                     )
+                }
+                if FlowWatchApp.StatusBarDisplayMode(rawValue: statusBarDisplayModeRaw) == .minimalSignal {
+                    rowDivider
+                    settingsRow(
+                        title: l10n.t("settings.minimalSignal.showTotals"),
+                        detail: l10n.t("settings.minimalSignal.showTotals.desc")
+                    ) {
+                        ModernSwitch(isOn: $minimalSignalShowsTrafficTotals, tint: currentSection.tint)
+                    }
                 }
             }
             settingsPanel(title: l10n.t("settings.group.numberUpdates"), systemImage: "timer") {

@@ -49,6 +49,9 @@
 "settings.displayMode.speed" = "Speed";
 "settings.displayMode.total" = "Today Total";
 "settings.displayMode.both" = "Both";
+"settings.displayMode.minimalSignal" = "Minimal Signal";
+"settings.minimalSignal.showTotals" = "Show up/down totals";
+"settings.minimalSignal.showTotals.desc" = "Show today's upload and download totals next to the minimal signal.";
 
 "settings.maxColorRate.limitTitle" = "Coloring upper limit";
 "settings.maxColorRate.intensityTitle" = "Coloring intensity";
