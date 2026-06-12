@@ -9,6 +9,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private let maxColorRateKey = "maxColorRateMbps"
     private let colorRatePercentKey = "colorRatePercent"
     private let smoothTransitionKey = "statusBarSmoothTransition"
+    private let minimalSignalShowsTrafficTotalsKey = "minimalSignalShowsTrafficTotals"
     private let monitor: NetworkUsageMonitor
     private let processMonitor: ProcessNetworkMonitor
     private let statusItem: NSStatusItem
@@ -57,6 +58,11 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private var animationDuration: CFTimeInterval {
         monitor.sampleInterval
     }
+    private var minimalSignalTimer: DispatchSourceTimer?
+    private var previousRawDownloadBps: Double?
+    private var previousRawUploadBps: Double?
+    private var downloadBlinkPeriod: CFTimeInterval?
+    private var uploadBlinkPeriod: CFTimeInterval?
 
     private var smoothTransitionEnabled: Bool {
         if UserDefaults.standard.object(forKey: smoothTransitionKey) == nil {
@@ -65,7 +71,15 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         return UserDefaults.standard.bool(forKey: smoothTransitionKey)
     }
 
+    private var minimalSignalShowsTrafficTotals: Bool {
+        if UserDefaults.standard.object(forKey: minimalSignalShowsTrafficTotalsKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: minimalSignalShowsTrafficTotalsKey)
+    }
+
     private let cachedWhite = NSColor.white.usingColorSpace(.sRGB) ?? .white
+    private let cachedGreen = NSColor.systemGreen.usingColorSpace(.sRGB) ?? .systemGreen
     private let cachedYellow = NSColor.systemYellow.usingColorSpace(.sRGB) ?? .systemYellow
     private let cachedRed = NSColor.systemRed.usingColorSpace(.sRGB) ?? .systemRed
 
@@ -118,6 +132,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
                 guard let self else { return }
                 let todayDownD = Double(todayDown)
                 let todayUpD = Double(todayUp)
+                self.updateMinimalSignalBlinkPeriods(downloadBps: down, uploadBps: up)
                 if self.smoothTransitionEnabled {
                     self.startAnimation(targetDown: down, targetUp: up,
                                         targetTodayDown: todayDownD, targetTodayUp: todayUpD)
@@ -135,7 +150,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private func bindUserDefaults() {
         let defaults = UserDefaults.standard
-        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey]
+        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey]
         for key in keys {
             defaults.addObserver(self, forKeyPath: key, options: [.new, .old], context: nil)
         }
@@ -151,7 +166,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
             return
         }
-        let watchedKeys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey]
+        let watchedKeys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey]
         guard watchedKeys.contains(keyPath) else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
             return
@@ -244,6 +259,14 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private let colorQuantStep: Double = 256_000
 
     private func currentRenderKey() -> String {
+        if displayMode == .minimalSignal {
+            return minimalSignalRenderKey(
+                downloadBps: displayedDownloadBps,
+                uploadBps: displayedUploadBps,
+                todayDownloaded: displayedTodayDownloaded,
+                todayUploaded: displayedTodayUploaded
+            )
+        }
         let downSpeed = monitor.fixedWidthCompactSpeed(displayedDownloadBps)
         let upSpeed = monitor.fixedWidthCompactSpeed(displayedUploadBps)
         let downTotal = monitor.fixedWidthDataAmount(UInt64(displayedTodayDownloaded))
@@ -254,11 +277,14 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func updateStatusButtonContent() {
+        syncMinimalSignalTimer()
         let key = currentRenderKey()
         if animationTimer != nil && key == lastRenderedKey { return }
+        if displayMode == .minimalSignal && key == lastRenderedKey { return }
         lastRenderedKey = key
 
         guard let button = statusItem.button else { return }
+        statusItem.length = displayMode == .minimalSignal && !minimalSignalShowsTrafficTotals ? 18 : NSStatusItem.variableLength
 
         switch displayMode {
         case .speed:
@@ -267,6 +293,8 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             renderTotalOnly(into: button)
         case .both:
             renderCombined(into: button)
+        case .minimalSignal:
+            renderMinimalSignal(into: button)
         }
     }
 
@@ -295,6 +323,271 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         let alpha = start.alphaComponent + (end.alphaComponent - start.alphaComponent) * clampedT
 
         return NSColor(red: red, green: green, blue: blue, alpha: alpha)
+    }
+
+    private func colorForMinimalSignalSpeed(_ bytesPerSecond: Double) -> NSColor {
+        let ratio = speedColorRatio(bytesPerSecond)
+        if ratio < 0.5 {
+            return interpolateColor(from: cachedGreen, to: cachedYellow, t: ratio / 0.5)
+        } else {
+            return interpolateColor(from: cachedYellow, to: cachedRed, t: (ratio - 0.5) / 0.5)
+        }
+    }
+
+    private func speedColorRatio(_ bytesPerSecond: Double) -> Double {
+        let mbps = max(0, bytesPerSecond) * 8 / 1_000_000
+        let percent = max(0, min(colorRatePercent, 100))
+        let maxRate = max(0, maxColorRateMbps) * percent / 100
+        guard maxRate > 0 else {
+            return 0
+        }
+        return max(0, min(mbps / maxRate, 1))
+    }
+
+    private func minimalSignalColorBucket(_ bytesPerSecond: Double) -> Int {
+        Int((speedColorRatio(bytesPerSecond) * 20).rounded())
+    }
+
+    private func minimalSignalRenderKey(downloadBps: Double, uploadBps: Double, todayDownloaded: Double, todayUploaded: Double) -> String {
+        let downColor = minimalSignalColorBucket(downloadBps)
+        let upColor = minimalSignalColorBucket(uploadBps)
+        let downAlpha = Int((blinkAlpha(for: downloadBlinkPeriod) * 10).rounded())
+        let upAlpha = Int((blinkAlpha(for: uploadBlinkPeriod) * 10).rounded())
+        let showsTotals = minimalSignalShowsTrafficTotals
+        if showsTotals {
+            let totals = minimalSignalDataAmountParts(
+                uploadBytes: UInt64(todayUploaded),
+                downloadBytes: UInt64(todayDownloaded)
+            )
+            let upTotal = "\(totals.up.value) \(totals.up.unit)"
+            let downTotal = "\(totals.down.value) \(totals.down.unit)"
+            return "\(displayMode.rawValue)|totals|\(upTotal)|\(downTotal)|\(downColor)|\(upColor)|\(downAlpha)|\(upAlpha)"
+        }
+        return "\(displayMode.rawValue)|dots|\(downColor)|\(upColor)|\(downAlpha)|\(upAlpha)"
+    }
+
+    private func updateMinimalSignalBlinkPeriods(downloadBps: Double, uploadBps: Double) {
+        if let previousRawDownloadBps {
+            let deltaPerSecond = abs(downloadBps - previousRawDownloadBps) / max(monitor.sampleInterval, 1)
+            downloadBlinkPeriod = blinkPeriod(forDeltaBytesPerSecondPerSecond: deltaPerSecond)
+        } else {
+            downloadBlinkPeriod = nil
+        }
+
+        if let previousRawUploadBps {
+            let deltaPerSecond = abs(uploadBps - previousRawUploadBps) / max(monitor.sampleInterval, 1)
+            uploadBlinkPeriod = blinkPeriod(forDeltaBytesPerSecondPerSecond: deltaPerSecond)
+        } else {
+            uploadBlinkPeriod = nil
+        }
+
+        previousRawDownloadBps = downloadBps
+        previousRawUploadBps = uploadBps
+    }
+
+    private func blinkPeriod(forDeltaBytesPerSecondPerSecond delta: Double) -> CFTimeInterval? {
+        let mbpsPerSecond = max(0, delta) * 8 / 1_000_000
+        guard mbpsPerSecond >= 0.05 else {
+            return nil
+        }
+        let ratio = max(0, min(mbpsPerSecond / 20, 1))
+        return 1.2 - (0.95 * ratio)
+    }
+
+    private func blinkAlpha(for period: CFTimeInterval?) -> CGFloat {
+        guard let period else {
+            return 1
+        }
+        let position = CACurrentMediaTime().truncatingRemainder(dividingBy: period) / period
+        let pulse = 0.5 + 0.5 * cos(position * 2 * .pi)
+        return CGFloat(0.35 + 0.65 * pulse)
+    }
+
+    private func syncMinimalSignalTimer() {
+        guard displayMode == .minimalSignal else {
+            stopMinimalSignalTimer()
+            return
+        }
+        guard minimalSignalTimer == nil else { return }
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            if self.displayMode == .minimalSignal {
+                self.updateStatusButtonContent()
+            } else {
+                self.stopMinimalSignalTimer()
+            }
+        }
+        timer.resume()
+        minimalSignalTimer = timer
+    }
+
+    private func stopMinimalSignalTimer() {
+        minimalSignalTimer?.cancel()
+        minimalSignalTimer = nil
+    }
+
+    private func makeMinimalSignalImage() -> NSImage? {
+        if minimalSignalShowsTrafficTotals {
+            return makeMinimalSignalTotalsImage()
+        }
+        let canvasSize = NSSize(width: 18, height: 18)
+
+        return NSImage(size: canvasSize, flipped: false) { _ in
+            self.drawMinimalSignalDots(originX: 6)
+
+            return true
+        }
+    }
+
+    private func makeMinimalSignalTotalsImage() -> NSImage? {
+        let totals = minimalSignalDataAmountParts(
+            uploadBytes: UInt64(displayedTodayUploaded),
+            downloadBytes: UInt64(displayedTodayDownloaded)
+        )
+        let up = totals.up
+        let down = totals.down
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: cachedBadgeFont
+        ]
+
+        let upNumberAttr = NSAttributedString(
+            string: up.value,
+            attributes: attributes.merging([.foregroundColor: colorForSpeed(displayedUploadBps)]) { _, new in new }
+        )
+        let upUnitAttr = NSAttributedString(
+            string: up.unit,
+            attributes: attributes.merging([.foregroundColor: colorForSpeed(displayedUploadBps)]) { _, new in new }
+        )
+        let downNumberAttr = NSAttributedString(
+            string: down.value,
+            attributes: attributes.merging([.foregroundColor: colorForSpeed(displayedDownloadBps)]) { _, new in new }
+        )
+        let downUnitAttr = NSAttributedString(
+            string: down.unit,
+            attributes: attributes.merging([.foregroundColor: colorForSpeed(displayedDownloadBps)]) { _, new in new }
+        )
+
+        let dotSize: CGFloat = 5
+        let leadingPadding: CGFloat = 2
+        let trailingPadding: CGFloat = 2
+        let gap: CGFloat = 4
+        let unitGap: CGFloat = 4
+        let topRowCenterY: CGFloat = 14
+        let bottomRowCenterY: CGFloat = 4
+        let upNumberSize = upNumberAttr.size()
+        let upUnitSize = upUnitAttr.size()
+        let downNumberSize = downNumberAttr.size()
+        let downUnitSize = downUnitAttr.size()
+        let numberColumnWidth = max(upNumberSize.width, downNumberSize.width)
+        let unitColumnWidth = max(upUnitSize.width, downUnitSize.width)
+        let dotX = leadingPadding
+        let textX = dotX + dotSize + gap
+        let unitX = textX + numberColumnWidth + unitGap
+        let canvasSize = NSSize(
+            width: unitX + unitColumnWidth + trailingPadding,
+            height: 18
+        )
+
+        return NSImage(size: canvasSize, flipped: false) { _ in
+            self.drawMinimalSignalDots(originX: dotX)
+            upNumberAttr.draw(at: NSPoint(
+                x: textX + numberColumnWidth - upNumberSize.width,
+                y: topRowCenterY - upNumberSize.height / 2
+            ))
+            upUnitAttr.draw(at: NSPoint(
+                x: unitX,
+                y: topRowCenterY - upUnitSize.height / 2
+            ))
+            downNumberAttr.draw(at: NSPoint(
+                x: textX + numberColumnWidth - downNumberSize.width,
+                y: bottomRowCenterY - downNumberSize.height / 2
+            ))
+            downUnitAttr.draw(at: NSPoint(
+                x: unitX,
+                y: bottomRowCenterY - downUnitSize.height / 2
+            ))
+            return true
+        }
+    }
+
+    private func drawMinimalSignalDots(originX: CGFloat) {
+        let dotSize: CGFloat = 5
+        let uploadColor = colorForSpeed(displayedUploadBps)
+            .withAlphaComponent(blinkAlpha(for: uploadBlinkPeriod))
+        let downloadColor = colorForSpeed(displayedDownloadBps)
+            .withAlphaComponent(blinkAlpha(for: downloadBlinkPeriod))
+
+        uploadColor.setFill()
+        NSBezierPath(ovalIn: NSRect(x: originX, y: 12, width: dotSize, height: dotSize)).fill()
+
+        downloadColor.setFill()
+        NSBezierPath(ovalIn: NSRect(x: originX, y: 2, width: dotSize, height: dotSize)).fill()
+    }
+
+    private func minimalSignalDataAmountParts(
+        uploadBytes: UInt64,
+        downloadBytes: UInt64
+    ) -> (up: (value: String, unit: String), down: (value: String, unit: String)) {
+        let up = dataAmountComponents(uploadBytes)
+        let down = dataAmountComponents(downloadBytes)
+        let upIntegerDigits = integerDigitCount(up.value)
+        let downIntegerDigits = integerDigitCount(down.value)
+        let shouldUseDecimal = abs(upIntegerDigits - downIntegerDigits) >= 2
+
+        let upDecimals = shouldUseDecimal && upIntegerDigits < downIntegerDigits ? 1 : 0
+        let downDecimals = shouldUseDecimal && downIntegerDigits < upIntegerDigits ? 1 : 0
+
+        return (
+            up: formattedDataAmountParts(up.value, unitIndex: up.unitIndex, decimals: upDecimals),
+            down: formattedDataAmountParts(down.value, unitIndex: down.unitIndex, decimals: downDecimals)
+        )
+    }
+
+    private func dataAmountComponents(_ bytes: UInt64) -> (value: Double, unitIndex: Int, unit: String) {
+        let units = ["B", "kB", "MB", "GB", "TB"]
+        var value = Double(bytes)
+        var unitIndex = 0
+
+        while value >= 1024, unitIndex < units.count - 1 {
+            value /= 1024
+            unitIndex += 1
+        }
+
+        return (value, unitIndex, units[unitIndex])
+    }
+
+    private func formattedDataAmountParts(
+        _ value: Double,
+        unitIndex: Int,
+        decimals: Int
+    ) -> (value: String, unit: String) {
+        let units = ["B", "kB", "MB", "GB", "TB"]
+        var displayValue = value
+        var displayUnitIndex = unitIndex
+        let scale = pow(10, Double(decimals))
+        var rounded = (displayValue * scale).rounded() / scale
+
+        if rounded >= 1024, displayUnitIndex < units.count - 1 {
+            displayValue /= 1024
+            displayUnitIndex += 1
+            let nextScale = pow(10, Double(decimals))
+            rounded = (displayValue * nextScale).rounded() / nextScale
+        }
+
+        let format = decimals > 0 ? "%.\(decimals)f" : "%.0f"
+        return (String(format: format, rounded), units[displayUnitIndex])
+    }
+
+    private func integerDigitCount(_ value: Double) -> Int {
+        let rounded = max(0, value.rounded())
+        guard rounded >= 1 else {
+            return 1
+        }
+        return Int(floor(log10(rounded))) + 1
     }
 
     private func makeSpeedBadgeImage() -> NSImage? {
@@ -427,6 +720,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private func renderCombined(into button: NSStatusBarButton) {
         if let image = makeCombinedBadgeImage() {
+            button.image = image
+            button.title = ""
+        }
+    }
+
+    private func renderMinimalSignal(into button: NSStatusBarButton) {
+        if let image = makeMinimalSignalImage() {
             button.image = image
             button.title = ""
         }
@@ -664,6 +964,14 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func targetRenderKey() -> String {
+        if displayMode == .minimalSignal {
+            return minimalSignalRenderKey(
+                downloadBps: targetDownloadBps,
+                uploadBps: targetUploadBps,
+                todayDownloaded: targetTodayDownloaded,
+                todayUploaded: targetTodayUploaded
+            )
+        }
         let downSpeed = monitor.fixedWidthCompactSpeed(targetDownloadBps)
         let upSpeed = monitor.fixedWidthCompactSpeed(targetUploadBps)
         let downTotal = monitor.fixedWidthDataAmount(UInt64(targetTodayDownloaded))
@@ -735,7 +1043,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     deinit {
         let defaults = UserDefaults.standard
-        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey]
+        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey]
         for key in keys {
             defaults.removeObserver(self, forKeyPath: key)
         }

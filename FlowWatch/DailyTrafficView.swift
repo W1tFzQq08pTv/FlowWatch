@@ -49,9 +49,6 @@ struct DailyTrafficView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(l10n.t("daily.title"))
                     .font(.system(size: 17, weight: .semibold))
-                Text(l10n.t("daily.chart.last7Days"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
             }
 
             Spacer()

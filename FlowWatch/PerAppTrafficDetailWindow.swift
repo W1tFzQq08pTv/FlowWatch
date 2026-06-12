@@ -183,7 +183,7 @@ enum PerAppSortMode: String, CaseIterable {
 struct PerAppTrafficDetailView: View {
     @EnvironmentObject private var viewModel: PerAppTrafficViewModel
     @EnvironmentObject private var l10n: LocalizationManager
-    @State private var sortMode: PerAppSortMode = .totalDesc
+    @State private var sortMode: PerAppSortMode = .downloadSpeedDesc
     @State private var filterMode: PerAppFilterMode = .all
     @State private var dateRange: PerAppDateRange = .today
 
