@@ -163,21 +163,10 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private func bindUserDefaults() {
         let defaults = UserDefaults.standard
-        let keys = watchedDefaultsKeys
+        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey, minimalSignalBlinkSpeedPercentKey]
         for key in keys {
             defaults.addObserver(self, forKeyPath: key, options: [.new, .old], context: nil)
         }
-    }
-
-    private var watchedDefaultsKeys: [String] {
-        [
-            displayModeKey,
-            maxColorRateKey,
-            colorRatePercentKey,
-            smoothTransitionKey,
-            minimalSignalShowsTrafficTotalsKey,
-            minimalSignalBlinkSpeedPercentKey
-        ]
     }
 
     override nonisolated func observeValue(
@@ -190,7 +179,8 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
             return
         }
-        guard watchedDefaultsKeys.contains(keyPath) else {
+        let watchedKeys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey, minimalSignalBlinkSpeedPercentKey]
+        guard watchedKeys.contains(keyPath) else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
             return
         }
@@ -1057,7 +1047,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     deinit {
         let defaults = UserDefaults.standard
-        let keys = watchedDefaultsKeys
+        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey, minimalSignalBlinkSpeedPercentKey]
         for key in keys {
             defaults.removeObserver(self, forKeyPath: key)
         }
