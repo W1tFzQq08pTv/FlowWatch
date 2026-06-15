@@ -59,10 +59,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         monitor.sampleInterval
     }
     private var minimalSignalTimer: DispatchSourceTimer?
-    private var previousRawDownloadBps: Double?
-    private var previousRawUploadBps: Double?
     private var downloadBlinkPeriod: CFTimeInterval?
     private var uploadBlinkPeriod: CFTimeInterval?
+    private let minimalSignalBlinkMinimumMbps: Double = 0.03
+    private let minimalSignalBlinkMaximumMbps: Double = 8
+    private let minimalSignalBlinkSlowestPeriod: CFTimeInterval = 1.05
+    private let minimalSignalBlinkFastestPeriod: CFTimeInterval = 0.22
+    private let minimalSignalRedrawIntervalMilliseconds = 50
 
     private var smoothTransitionEnabled: Bool {
         if UserDefaults.standard.object(forKey: smoothTransitionKey) == nil {
@@ -351,8 +354,8 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private func minimalSignalRenderKey(downloadBps: Double, uploadBps: Double, todayDownloaded: Double, todayUploaded: Double) -> String {
         let downColor = minimalSignalColorBucket(downloadBps)
         let upColor = minimalSignalColorBucket(uploadBps)
-        let downAlpha = Int((blinkAlpha(for: downloadBlinkPeriod) * 10).rounded())
-        let upAlpha = Int((blinkAlpha(for: uploadBlinkPeriod) * 10).rounded())
+        let downAlpha = Int((blinkAlpha(for: downloadBlinkPeriod) * 20).rounded())
+        let upAlpha = Int((blinkAlpha(for: uploadBlinkPeriod) * 20).rounded())
         let showsTotals = minimalSignalShowsTrafficTotals
         if showsTotals {
             let totals = minimalSignalDataAmountParts(
@@ -367,31 +370,19 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func updateMinimalSignalBlinkPeriods(downloadBps: Double, uploadBps: Double) {
-        if let previousRawDownloadBps {
-            let deltaPerSecond = abs(downloadBps - previousRawDownloadBps) / max(monitor.sampleInterval, 1)
-            downloadBlinkPeriod = blinkPeriod(forDeltaBytesPerSecondPerSecond: deltaPerSecond)
-        } else {
-            downloadBlinkPeriod = nil
-        }
-
-        if let previousRawUploadBps {
-            let deltaPerSecond = abs(uploadBps - previousRawUploadBps) / max(monitor.sampleInterval, 1)
-            uploadBlinkPeriod = blinkPeriod(forDeltaBytesPerSecondPerSecond: deltaPerSecond)
-        } else {
-            uploadBlinkPeriod = nil
-        }
-
-        previousRawDownloadBps = downloadBps
-        previousRawUploadBps = uploadBps
+        downloadBlinkPeriod = blinkPeriod(forSpeedBytesPerSecond: downloadBps)
+        uploadBlinkPeriod = blinkPeriod(forSpeedBytesPerSecond: uploadBps)
     }
 
-    private func blinkPeriod(forDeltaBytesPerSecondPerSecond delta: Double) -> CFTimeInterval? {
-        let mbpsPerSecond = max(0, delta) * 8 / 1_000_000
-        guard mbpsPerSecond >= 0.05 else {
+    private func blinkPeriod(forSpeedBytesPerSecond bytesPerSecond: Double) -> CFTimeInterval? {
+        let mbps = max(0, bytesPerSecond) * 8 / 1_000_000
+        guard mbps >= minimalSignalBlinkMinimumMbps else {
             return nil
         }
-        let ratio = max(0, min(mbpsPerSecond / 20, 1))
-        return 1.2 - (0.95 * ratio)
+        let range = minimalSignalBlinkMaximumMbps - minimalSignalBlinkMinimumMbps
+        let ratio = max(0, min((mbps - minimalSignalBlinkMinimumMbps) / range, 1))
+        let emphasizedRatio = ratio.squareRoot()
+        return minimalSignalBlinkSlowestPeriod - ((minimalSignalBlinkSlowestPeriod - minimalSignalBlinkFastestPeriod) * emphasizedRatio)
     }
 
     private func blinkAlpha(for period: CFTimeInterval?) -> CGFloat {
@@ -400,7 +391,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         }
         let position = CACurrentMediaTime().truncatingRemainder(dividingBy: period) / period
         let pulse = 0.5 + 0.5 * cos(position * 2 * .pi)
-        return CGFloat(0.35 + 0.65 * pulse)
+        return CGFloat(0.12 + 0.88 * pulse)
     }
 
     private func syncMinimalSignalTimer() {
@@ -411,7 +402,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         guard minimalSignalTimer == nil else { return }
 
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+        timer.schedule(deadline: .now(), repeating: .milliseconds(minimalSignalRedrawIntervalMilliseconds))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             if self.displayMode == .minimalSignal {
@@ -474,7 +465,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         let dotSize: CGFloat = 5
         let leadingPadding: CGFloat = 2
         let trailingPadding: CGFloat = 2
-        let gap: CGFloat = 4
+        let gap: CGFloat = 6
         let unitGap: CGFloat = 4
         let topRowCenterY: CGFloat = 14
         let bottomRowCenterY: CGFloat = 4
