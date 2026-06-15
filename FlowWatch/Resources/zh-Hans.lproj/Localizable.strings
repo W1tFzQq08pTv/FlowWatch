@@ -52,6 +52,8 @@
 "settings.displayMode.minimalSignal" = "极简信号";
 "settings.minimalSignal.showTotals" = "显示上下行统计";
 "settings.minimalSignal.showTotals.desc" = "在极简信号旁显示今日上传和下载累计流量。";
+"settings.minimalSignal.blinkSpeed" = "闪烁速度";
+"settings.minimalSignal.blinkSpeed.desc" = "控制极简信号灯随上下行速率闪烁的快慢。";
 
 "settings.maxColorRate.limitTitle" = "上色上限";
 "settings.maxColorRate.intensityTitle" = "上色强度";

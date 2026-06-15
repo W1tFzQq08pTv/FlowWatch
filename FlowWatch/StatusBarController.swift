@@ -10,6 +10,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private let colorRatePercentKey = "colorRatePercent"
     private let smoothTransitionKey = "statusBarSmoothTransition"
     private let minimalSignalShowsTrafficTotalsKey = "minimalSignalShowsTrafficTotals"
+    private let minimalSignalBlinkSpeedPercentKey = "minimalSignalBlinkSpeedPercent"
     private let monitor: NetworkUsageMonitor
     private let processMonitor: ProcessNetworkMonitor
     private let statusItem: NSStatusItem
@@ -62,9 +63,11 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private var downloadBlinkPeriod: CFTimeInterval?
     private var uploadBlinkPeriod: CFTimeInterval?
     private let minimalSignalBlinkMinimumMbps: Double = 0.03
-    private let minimalSignalBlinkMaximumMbps: Double = 8
+    private let minimalSignalBlinkRelaxedMaximumMbps: Double = 20
+    private let minimalSignalBlinkSensitiveMaximumMbps: Double = 8
     private let minimalSignalBlinkSlowestPeriod: CFTimeInterval = 1.05
-    private let minimalSignalBlinkFastestPeriod: CFTimeInterval = 0.22
+    private let minimalSignalBlinkRelaxedFastestPeriod: CFTimeInterval = 0.55
+    private let minimalSignalBlinkSensitiveFastestPeriod: CFTimeInterval = 0.22
     private let minimalSignalRedrawIntervalMilliseconds = 50
 
     private var smoothTransitionEnabled: Bool {
@@ -79,6 +82,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             return true
         }
         return UserDefaults.standard.bool(forKey: minimalSignalShowsTrafficTotalsKey)
+    }
+
+    private var minimalSignalBlinkSpeedPercent: Double {
+        if UserDefaults.standard.object(forKey: minimalSignalBlinkSpeedPercentKey) == nil {
+            return 50
+        }
+        return max(0, min(UserDefaults.standard.double(forKey: minimalSignalBlinkSpeedPercentKey), 100))
     }
 
     private let cachedWhite = NSColor.white.usingColorSpace(.sRGB) ?? .white
@@ -153,10 +163,21 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private func bindUserDefaults() {
         let defaults = UserDefaults.standard
-        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey]
+        let keys = watchedDefaultsKeys
         for key in keys {
             defaults.addObserver(self, forKeyPath: key, options: [.new, .old], context: nil)
         }
+    }
+
+    private var watchedDefaultsKeys: [String] {
+        [
+            displayModeKey,
+            maxColorRateKey,
+            colorRatePercentKey,
+            smoothTransitionKey,
+            minimalSignalShowsTrafficTotalsKey,
+            minimalSignalBlinkSpeedPercentKey
+        ]
     }
 
     override nonisolated func observeValue(
@@ -169,8 +190,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
             return
         }
-        let watchedKeys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey]
-        guard watchedKeys.contains(keyPath) else {
+        guard watchedDefaultsKeys.contains(keyPath) else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
             return
         }
@@ -379,10 +399,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         guard mbps >= minimalSignalBlinkMinimumMbps else {
             return nil
         }
-        let range = minimalSignalBlinkMaximumMbps - minimalSignalBlinkMinimumMbps
+        let speedRatio = minimalSignalBlinkSpeedPercent / 100
+        let maximumMbps = minimalSignalBlinkRelaxedMaximumMbps - ((minimalSignalBlinkRelaxedMaximumMbps - minimalSignalBlinkSensitiveMaximumMbps) * speedRatio)
+        let fastestPeriod = minimalSignalBlinkRelaxedFastestPeriod - ((minimalSignalBlinkRelaxedFastestPeriod - minimalSignalBlinkSensitiveFastestPeriod) * speedRatio)
+        let range = maximumMbps - minimalSignalBlinkMinimumMbps
         let ratio = max(0, min((mbps - minimalSignalBlinkMinimumMbps) / range, 1))
         let emphasizedRatio = ratio.squareRoot()
-        return minimalSignalBlinkSlowestPeriod - ((minimalSignalBlinkSlowestPeriod - minimalSignalBlinkFastestPeriod) * emphasizedRatio)
+        return minimalSignalBlinkSlowestPeriod - ((minimalSignalBlinkSlowestPeriod - fastestPeriod) * emphasizedRatio)
     }
 
     private func blinkAlpha(for period: CFTimeInterval?) -> CGFloat {
@@ -1034,7 +1057,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     deinit {
         let defaults = UserDefaults.standard
-        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey]
+        let keys = watchedDefaultsKeys
         for key in keys {
             defaults.removeObserver(self, forKeyPath: key)
         }
