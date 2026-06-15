@@ -52,6 +52,8 @@
 "settings.displayMode.minimalSignal" = "Minimal Signal";
 "settings.minimalSignal.showTotals" = "Show up/down totals";
 "settings.minimalSignal.showTotals.desc" = "Show today's upload and download totals next to the minimal signal.";
+"settings.minimalSignal.blinkSpeed" = "Blink speed";
+"settings.minimalSignal.blinkSpeed.desc" = "Controls how quickly the minimal signal blinks with upload and download speed.";
 
 "settings.maxColorRate.limitTitle" = "Coloring upper limit";
 "settings.maxColorRate.intensityTitle" = "Coloring intensity";

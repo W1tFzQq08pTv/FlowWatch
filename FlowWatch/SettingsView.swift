@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("statusBar.sampleInterval") private var sampleInterval: Double = 5.0
     @AppStorage("statusBarSmoothTransition") private var smoothTransition: Bool = true
     @AppStorage("minimalSignalShowsTrafficTotals") private var minimalSignalShowsTrafficTotals: Bool = true
+    @AppStorage("minimalSignalBlinkSpeedPercent") private var minimalSignalBlinkSpeedPercent: Double = 50
     @AppStorage("logging.enabled") private var loggingEnabled: Bool = true
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var selectedSection: SettingsSection? = .general
@@ -227,6 +228,25 @@ struct SettingsView: View {
                     ) {
                         ModernSwitch(isOn: $minimalSignalShowsTrafficTotals, tint: currentSection.tint)
                     }
+                    rowDivider
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(l10n.t("settings.minimalSignal.blinkSpeed"))
+                                    .font(.system(size: 13, weight: .medium))
+                                Text(l10n.t("settings.minimalSignal.blinkSpeed.desc"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer()
+                            Text("\(Int(minimalSignalBlinkSpeedPercent.rounded()))%")
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        ModernSlider(value: minimalSignalBlinkSpeedBinding, range: 0...100, step: 1, tint: currentSection.tint)
+                    }
+                    .padding(.vertical, 8)
                 }
             }
             settingsPanel(title: l10n.t("settings.group.numberUpdates"), systemImage: "timer") {
@@ -804,6 +824,15 @@ struct SettingsView: View {
             get: { min(max(colorRatePercent, 0), 100) },
             set: { newValue in
                 colorRatePercent = max(0, min(newValue, 100))
+            }
+        )
+    }
+
+    private var minimalSignalBlinkSpeedBinding: Binding<Double> {
+        Binding(
+            get: { min(max(minimalSignalBlinkSpeedPercent, 0), 100) },
+            set: { newValue in
+                minimalSignalBlinkSpeedPercent = max(0, min(newValue, 100))
             }
         )
     }
