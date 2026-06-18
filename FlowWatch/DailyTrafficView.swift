@@ -229,15 +229,6 @@ struct DailyTrafficView: View {
         }
     }
 
-    private struct ByteFormatStyle: FormatStyle {
-        typealias FormatInput = Double
-        typealias FormatOutput = String
-
-        func format(_ value: Double) -> String {
-            ByteAxisFormatter.formatMB(value)
-        }
-    }
-
     private var displayedDownloadBps: Double {
         liveDisplay.isReady ? liveDisplay.downloadBps : monitor.downloadBps
     }
@@ -278,58 +269,116 @@ struct DailyTrafficView: View {
         return chartRecords.first(where: { $0.dayLabel == selectedRecord.dayLabel }) ?? selectedRecord
     }
 
+    private var todayChartDayLabel: String? {
+        chartRecords.first { Calendar.current.isDateInToday($0.date) }?.dayLabel
+    }
+
     private var maxChartValue: Double {
         chartRecords.map { max($0.downloadMB, $0.uploadMB) }.max() ?? 0
     }
 
-    private var yScaleDomain: ClosedRange<Double> {
-        guard maxChartValue > 0 else { return -0.05...1.0 }
-        let padding = max(maxChartValue * 0.12, 0.1)
-        return (-padding)...(maxChartValue + padding)
+    private var yAxisScale: TrafficChartYAxisScale {
+        TrafficChartYAxisScale(maxValueMB: maxChartValue)
     }
 
-    private var yAxisValues: [Double] {
-        guard maxChartValue > 0 else { return [0] }
+    private struct TrafficChartYAxisScale {
+        let domain: ClosedRange<Double>
+        let values: [Double]
 
-        let step = niceStep(for: maxChartValue / 4)
-        var values: [Double] = [0]
-        var current = step
-        var lastLabel = ByteAxisFormatter.formatMB(0)
+        private static let maxDivisionCount = 5
+        private let unit: Unit
 
-        while current < maxChartValue {
-            let label = ByteAxisFormatter.formatMB(current)
-            if label != lastLabel {
-                values.append(current)
-                lastLabel = label
+        init(maxValueMB: Double) {
+            guard maxValueMB > 0 else {
+                domain = -0.05...1
+                values = []
+                unit = .megabytes
+                return
             }
-            current += step
+
+            if maxValueMB >= 1024 {
+                let bounds = Self.axisBounds(upper: max(1, ceil(maxValueMB / 1024)))
+                domain = (-Self.lowerPadding(for: bounds.step) * 1024)...(bounds.upper * 1024)
+                values = Self.axisValues(upper: bounds.upper, step: bounds.step).map { $0 * 1024 }
+                unit = .gigabytes
+            } else if maxValueMB >= 1 {
+                let bounds = Self.axisBounds(upper: maxValueMB)
+                domain = (-Self.lowerPadding(for: bounds.step))...bounds.upper
+                values = Self.axisValues(upper: bounds.upper, step: bounds.step)
+                unit = .megabytes
+            } else {
+                let maxValueKB = maxValueMB * 1024
+                let bounds = Self.axisBounds(upper: maxValueKB)
+                domain = (-(Self.lowerPadding(for: bounds.step) / 1024))...(bounds.upper / 1024)
+                values = Self.axisValues(upper: bounds.upper, step: bounds.step).map { $0 / 1024 }
+                unit = .kilobytes
+            }
         }
 
-        let maxLabel = ByteAxisFormatter.formatMB(maxChartValue)
-        if lastLabel != maxLabel {
-            values.append(maxChartValue)
+        func format(_ valueMB: Double) -> String {
+            switch unit {
+            case .kilobytes:
+                return "\(Self.wholeNumber(valueMB * 1024)) K"
+            case .megabytes:
+                return "\(Self.wholeNumber(valueMB)) M"
+            case .gigabytes:
+                return "\(Self.wholeNumber(valueMB / 1024)) G"
+            }
         }
 
-        return values
-    }
-
-    private func niceStep(for value: Double) -> Double {
-        guard value > 0 else { return 1 }
-        let exponent = floor(log10(value))
-        let fraction = value / pow(10, exponent)
-        let niceFraction: Double
-
-        if fraction <= 1 {
-            niceFraction = 1
-        } else if fraction <= 2 {
-            niceFraction = 2
-        } else if fraction <= 5 {
-            niceFraction = 5
-        } else {
-            niceFraction = 10
+        private static func axisBounds(upper: Double) -> (upper: Double, step: Double) {
+            let step = integerStep(for: upper / Double(maxDivisionCount))
+            let adjustedUpper = max(step, ceil(upper / step) * step)
+            return (adjustedUpper, step)
         }
 
-        return niceFraction * pow(10, exponent)
+        private static func lowerPadding(for step: Double) -> Double {
+            step * 0.25
+        }
+
+        private static func axisValues(upper: Double, step: Double) -> [Double] {
+            guard upper > 0, step > 0 else { return [] }
+
+            var values: [Double] = []
+            var current = step
+
+            while current <= upper + step * 0.5 {
+                values.append(current)
+                current += step
+            }
+
+            return values
+        }
+
+        private static func integerStep(for value: Double) -> Double {
+            let adjustedValue = max(value, 1)
+            let exponent = floor(log10(adjustedValue))
+            let magnitude = pow(10, exponent)
+            let fraction = adjustedValue / magnitude
+            let multiplier: Double
+
+            if fraction <= 1 {
+                multiplier = 1
+            } else if fraction <= 2 {
+                multiplier = 2
+            } else if fraction <= 5 {
+                multiplier = 5
+            } else {
+                multiplier = 10
+            }
+
+            return multiplier * magnitude
+        }
+
+        private static func wholeNumber(_ value: Double) -> String {
+            String(format: "%.0f", value.rounded())
+        }
+
+        private enum Unit {
+            case kilobytes
+            case megabytes
+            case gigabytes
+        }
     }
 
     @available(macOS 13.0, *)
@@ -338,8 +387,14 @@ struct DailyTrafficView: View {
         let typeLabel = l10n.t("daily.chart.type")
         let downloadLabel = l10n.t("daily.download")
         let uploadLabel = l10n.t("daily.upload")
+        let axisScale = yAxisScale
+        let todayLabel = todayChartDayLabel
 
         return Chart {
+            RuleMark(y: .value("Baseline", 0))
+                .foregroundStyle(Color.secondary.opacity(0.22))
+                .lineStyle(StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
+
             ForEach(chartRecords) { record in
                 LineMark(
                     x: .value(dateLabel, record.dayLabel),
@@ -383,7 +438,7 @@ struct DailyTrafficView: View {
             }
         }
         .chartLegend(.hidden)
-        .chartYScale(domain: yScaleDomain)
+        .chartYScale(domain: axisScale.domain)
         .chartPlotStyle { plotArea in
             plotArea
                 .padding(.top, 4)
@@ -411,7 +466,7 @@ struct DailyTrafficView: View {
             AxisMarks { value in
                 if let label = value.as(String.self) {
                     AxisValueLabel(label)
-                        .font(.system(size: 9))
+                        .font(.system(size: 9, weight: label == todayLabel ? .semibold : .regular))
                         .foregroundStyle(Color.secondary.opacity(0.82))
                 }
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
@@ -421,10 +476,10 @@ struct DailyTrafficView: View {
             }
         }
         .chartYAxis {
-            AxisMarks(position: .leading, values: yAxisValues) { value in
+            AxisMarks(position: .leading, values: axisScale.values) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                     .foregroundStyle(Color.secondary.opacity(0.22))
-                AxisValueLabel(ByteFormatStyle().format(value.as(Double.self) ?? 0))
+                AxisValueLabel(axisScale.format(value.as(Double.self) ?? 0))
                     .font(.system(size: 9))
                     .foregroundStyle(Color.secondary.opacity(0.82))
             }
