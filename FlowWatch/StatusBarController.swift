@@ -542,8 +542,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         let downIntegerDigits = integerDigitCount(down.value)
         let shouldUseDecimal = abs(upIntegerDigits - downIntegerDigits) >= 2
 
-        let upDecimals = shouldUseDecimal && upIntegerDigits < downIntegerDigits ? 1 : 0
-        let downDecimals = shouldUseDecimal && downIntegerDigits < upIntegerDigits ? 1 : 0
+        var upDecimals = shouldUseDecimal && upIntegerDigits < downIntegerDigits ? 1 : 0
+        var downDecimals = shouldUseDecimal && downIntegerDigits < upIntegerDigits ? 1 : 0
+
+        if upDecimals == 0 && downDecimals == 0 {
+            upDecimals = 1
+            downDecimals = 1
+        }
 
         return (
             up: formattedDataAmountParts(up.value, unitIndex: up.unitIndex, decimals: upDecimals),
