@@ -71,8 +71,6 @@ struct TrafficStatisticsDetailView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 16) {
-            sidebarHeader
-
             VStack(spacing: 6) {
                 ForEach(StatisticsSection.allCases) { section in
                     sidebarRow(section)
@@ -85,26 +83,6 @@ struct TrafficStatisticsDetailView: View {
         .padding(16)
         .frame(width: 218)
         .background(.regularMaterial)
-    }
-
-    private var sidebarHeader: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "chart.bar.xaxis")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.blue)
-                .frame(width: 32, height: 32)
-                .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(l10n.t("statistics.title"))
-                    .font(.system(size: 14, weight: .semibold))
-                Text(l10n.t("statistics.sidebar.subtitle"))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.top, 2)
     }
 
     private func sidebarRow(_ section: StatisticsSection) -> some View {
