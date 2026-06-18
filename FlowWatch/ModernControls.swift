@@ -28,6 +28,7 @@ struct FlowWatchSegmentedControl<Value: Hashable>: View {
                             isSelected ? tint : Color.clear,
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                         )
+                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
