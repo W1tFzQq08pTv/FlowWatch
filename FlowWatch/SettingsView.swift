@@ -131,13 +131,15 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 isSelected ? section.tint : Color.clear,
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var currentSection: SettingsSection {
@@ -691,6 +693,7 @@ struct SettingsView: View {
                             isSelected ? currentSection.tint : Color.clear,
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                         )
+                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -976,6 +979,7 @@ private struct ModernActionButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .stroke((isDestructive ? Color.red : tint).opacity(0.18), lineWidth: 1)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }
 }
