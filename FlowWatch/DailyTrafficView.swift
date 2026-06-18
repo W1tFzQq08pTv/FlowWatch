@@ -285,12 +285,16 @@ struct DailyTrafficView: View {
         let domain: ClosedRange<Double>
         let values: [Double]
 
+        var gridValues: [Double] {
+            [0] + values
+        }
+
         private static let maxDivisionCount = 5
         private let unit: Unit
 
         init(maxValueMB: Double) {
             guard maxValueMB > 0 else {
-                domain = -0.05...1
+                domain = 0...1
                 values = []
                 unit = .megabytes
                 return
@@ -298,18 +302,18 @@ struct DailyTrafficView: View {
 
             if maxValueMB >= 1024 {
                 let bounds = Self.axisBounds(upper: max(1, ceil(maxValueMB / 1024)))
-                domain = (-Self.lowerPadding(for: bounds.step) * 1024)...(bounds.upper * 1024)
+                domain = 0...(bounds.upper * 1024)
                 values = Self.axisValues(upper: bounds.upper, step: bounds.step).map { $0 * 1024 }
                 unit = .gigabytes
             } else if maxValueMB >= 1 {
                 let bounds = Self.axisBounds(upper: maxValueMB)
-                domain = (-Self.lowerPadding(for: bounds.step))...bounds.upper
+                domain = 0...bounds.upper
                 values = Self.axisValues(upper: bounds.upper, step: bounds.step)
                 unit = .megabytes
             } else {
                 let maxValueKB = maxValueMB * 1024
                 let bounds = Self.axisBounds(upper: maxValueKB)
-                domain = (-(Self.lowerPadding(for: bounds.step) / 1024))...(bounds.upper / 1024)
+                domain = 0...(bounds.upper / 1024)
                 values = Self.axisValues(upper: bounds.upper, step: bounds.step).map { $0 / 1024 }
                 unit = .kilobytes
             }
@@ -330,10 +334,6 @@ struct DailyTrafficView: View {
             let step = integerStep(for: upper / Double(maxDivisionCount))
             let adjustedUpper = max(step, ceil(upper / step) * step)
             return (adjustedUpper, step)
-        }
-
-        private static func lowerPadding(for step: Double) -> Double {
-            step * 0.25
         }
 
         private static func axisValues(upper: Double, step: Double) -> [Double] {
@@ -391,10 +391,6 @@ struct DailyTrafficView: View {
         let todayLabel = todayChartDayLabel
 
         return Chart {
-            RuleMark(y: .value("Baseline", 0))
-                .foregroundStyle(Color.secondary.opacity(0.22))
-                .lineStyle(StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
-
             ForEach(chartRecords) { record in
                 LineMark(
                     x: .value(dateLabel, record.dayLabel),
@@ -438,12 +434,10 @@ struct DailyTrafficView: View {
             }
         }
         .chartLegend(.hidden)
-        .chartYScale(domain: axisScale.domain)
-        .chartPlotStyle { plotArea in
-            plotArea
-                .padding(.top, 4)
-                .padding(.bottom, 2)
-        }
+        .chartYScale(
+            domain: axisScale.domain,
+            range: .plotDimension(startPadding: 0, endPadding: 0)
+        )
         .chartOverlay { proxy in
             GeometryReader { geo in
                 let plotFrame = geo[proxy.plotAreaFrame]
@@ -476,12 +470,15 @@ struct DailyTrafficView: View {
             }
         }
         .chartYAxis {
-            AxisMarks(position: .leading, values: axisScale.values) { value in
+            AxisMarks(position: .leading, values: axisScale.gridValues) { value in
+                let rawValue = value.as(Double.self) ?? 0
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                     .foregroundStyle(Color.secondary.opacity(0.22))
-                AxisValueLabel(axisScale.format(value.as(Double.self) ?? 0))
-                    .font(.system(size: 9))
-                    .foregroundStyle(Color.secondary.opacity(0.82))
+                if rawValue != 0 {
+                    AxisValueLabel(axisScale.format(rawValue))
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.secondary.opacity(0.82))
+                }
             }
         }
         .frame(minHeight: 170)
