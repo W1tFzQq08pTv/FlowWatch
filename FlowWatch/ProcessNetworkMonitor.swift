@@ -420,18 +420,19 @@ final class ProcessNetworkMonitor: ObservableObject {
         lastSuccessfulSampleAt = sampledAt
 
         var rates: [AppTrafficRate] = []
+        var todayRecordsByBundleID = storage.getTodayRecordsByBundleID()
 
         for (bundleID, data) in bundleDeltas {
+            var todayRecord = todayRecordsByBundleID[bundleID]
             if data.deltaIn > 0 || data.deltaOut > 0 {
-                storage.addBytes(
+                todayRecord = storage.addBytesAndReturnTodayRecord(
                     bundleID: bundleID,
                     displayName: data.info.displayName,
                     downloadBytes: data.deltaIn,
                     uploadBytes: data.deltaOut
                 )
+                todayRecordsByBundleID[bundleID] = todayRecord
             }
-
-            let todayRecord = storage.getTodayRecord(bundleID: bundleID)
 
             rates.append(AppTrafficRate(
                 id: bundleID,
@@ -445,7 +446,7 @@ final class ProcessNetworkMonitor: ObservableObject {
             ))
         }
 
-        for record in storage.getTodayRecords() {
+        for record in todayRecordsByBundleID.values {
             if bundleDeltas[record.bundleID] == nil {
                 let info = resolver.resolve(pid: 0, processName: record.displayName)
                 rates.append(AppTrafficRate(

@@ -15,10 +15,6 @@ import QuartzCore
 struct DailyTrafficView: View {
     @ObservedObject private var monitor: NetworkUsageMonitor
     @StateObject private var viewModel = DailyTrafficViewModel()
-    @StateObject private var liveDisplay = DailyTrafficLiveDisplay()
-    @State private var selectedRecord: DailyTrafficItem?
-    @AppStorage("maxColorRateMbps") private var maxColorRateMbps: Double = 100
-    @AppStorage("colorRatePercent") private var colorRatePercent: Double = 100
     @EnvironmentObject private var l10n: LocalizationManager
 
     init(monitor: NetworkUsageMonitor) {
@@ -28,20 +24,23 @@ struct DailyTrafficView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            metricSummary
-            chartSection
+            DailyTrafficMetricSummaryView(monitor: monitor)
+            DailyTrafficChartSection(
+                records: chartRecords,
+                title: l10n.t("daily.chart.last7Days"),
+                dateLabel: l10n.t("daily.chart.date"),
+                typeLabel: l10n.t("daily.chart.type"),
+                downloadLabel: l10n.t("daily.download"),
+                uploadLabel: l10n.t("daily.upload"),
+                unavailableText: l10n.t("settings.requires.macos13")
+            )
+            .equatable()
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 10)
         .frame(width: 384)
         .fixedSize(horizontal: false, vertical: true)
-        .onAppear {
-            liveDisplay.bind(to: monitor)
-        }
-        .onDisappear {
-            liveDisplay.unbind()
-        }
     }
 
     private var header: some View {
@@ -71,7 +70,34 @@ struct DailyTrafficView: View {
         }
     }
 
-    private var metricSummary: some View {
+    private var chartRecords: [DailyTrafficItem] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let todayDownloadMB = Double(monitor.todayDownloaded) / (1024 * 1024)
+        let todayUploadMB = Double(monitor.todayUploaded) / (1024 * 1024)
+
+        return viewModel.records.map { record in
+            guard calendar.isDate(record.date, inSameDayAs: today) else {
+                return record
+            }
+            return DailyTrafficItem(
+                date: record.date,
+                dayLabel: record.dayLabel,
+                downloadMB: todayDownloadMB,
+                uploadMB: todayUploadMB
+            )
+        }
+    }
+}
+
+private struct DailyTrafficMetricSummaryView: View {
+    @ObservedObject var monitor: NetworkUsageMonitor
+    @StateObject private var liveDisplay = DailyTrafficLiveDisplay()
+    @AppStorage("maxColorRateMbps") private var maxColorRateMbps: Double = 100
+    @AppStorage("colorRatePercent") private var colorRatePercent: Double = 100
+    @EnvironmentObject private var l10n: LocalizationManager
+
+    var body: some View {
         HStack(spacing: 10) {
             metricCard(
                 title: l10n.t("daily.currentSpeed"),
@@ -106,6 +132,12 @@ struct DailyTrafficView: View {
                     color: .blue
                 )
             }
+        }
+        .onAppear {
+            liveDisplay.bind(to: monitor)
+        }
+        .onDisappear {
+            liveDisplay.unbind()
         }
     }
 
@@ -155,80 +187,6 @@ struct DailyTrafficView: View {
         }
     }
 
-    private var chartSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center) {
-                Text(l10n.t("daily.chart.last7Days"))
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                chartLegend
-            }
-
-            if #available(macOS 13.0, *) {
-                chartView
-            } else {
-                Text(l10n.t("settings.requires.macos13"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
-            }
-        }
-        .padding(12)
-        .background(Color(.controlBackgroundColor).opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.secondary.opacity(0.08), lineWidth: 1)
-        )
-    }
-
-    private var chartLegend: some View {
-        HStack(spacing: 10) {
-            legendItem(title: l10n.t("daily.download"), color: .blue)
-            legendItem(title: l10n.t("daily.upload"), color: .orange)
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-
-    private func legendItem(title: String, color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
-            Text(title)
-        }
-    }
-
-    private enum ByteAxisFormatter {
-        static func formatBytes(_ bytes: Double) -> String {
-            let units = ["B", "K", "M", "G", "T"]
-            var value = max(bytes, 0)
-            var unitIndex = 0
-
-            while value >= 1024 && unitIndex < units.count - 1 {
-                value /= 1024
-                unitIndex += 1
-            }
-
-            let stringValue: String
-            if value >= 100 {
-                stringValue = String(format: "%.0f", value.rounded())
-            } else if value >= 10 {
-                stringValue = String(format: "%.1f", value)
-            } else if unitIndex == 0 {
-                stringValue = String(format: "%.0f", value)
-            } else {
-                stringValue = String(format: "%.1f", value)
-            }
-
-            return "\(stringValue) \(units[unitIndex])"
-        }
-
-        static func formatMB(_ value: Double) -> String {
-            formatBytes(value * 1024 * 1024)
-        }
-    }
-
     private var displayedDownloadBps: Double {
         liveDisplay.isReady ? liveDisplay.downloadBps : monitor.downloadBps
     }
@@ -245,153 +203,127 @@ struct DailyTrafficView: View {
         liveDisplay.isReady ? liveDisplay.todayUploaded : Double(monitor.todayUploaded)
     }
 
-    private var chartRecords: [DailyTrafficItem] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        let todayDownloadMB = displayedTodayDownloaded / (1024 * 1024)
-        let todayUploadMB = displayedTodayUploaded / (1024 * 1024)
+    private func speedValueColor(for bytesPerSecond: Double) -> Color {
+        let ratio = speedColorRatio(for: bytesPerSecond)
+        let startColor = NSColor.labelColor.usingColorSpace(.sRGB) ?? .labelColor
+        let yellow = NSColor.systemYellow.usingColorSpace(.sRGB) ?? .systemYellow
+        let red = NSColor.systemRed.usingColorSpace(.sRGB) ?? .systemRed
 
-        return viewModel.records.map { record in
-            guard calendar.isDate(record.date, inSameDayAs: today) else {
-                return record
+        if ratio < 0.5 {
+            return interpolatedColor(from: startColor, to: yellow, t: ratio / 0.5)
+        } else {
+            return interpolatedColor(from: yellow, to: red, t: (ratio - 0.5) / 0.5)
+        }
+    }
+
+    private func speedColorRatio(for bytesPerSecond: Double) -> Double {
+        let mbps = max(0, bytesPerSecond) * 8 / 1_000_000
+        let percent = max(0, min(colorRatePercent, 100))
+        let maxRate = max(0, maxColorRateMbps) * percent / 100
+        guard maxRate > 0 else { return 0 }
+        return max(0, min(mbps / maxRate, 1))
+    }
+
+    private func interpolatedColor(from start: NSColor, to end: NSColor, t: Double) -> Color {
+        let clamped = CGFloat(max(0, min(1, t)))
+        let red = start.redComponent + (end.redComponent - start.redComponent) * clamped
+        let green = start.greenComponent + (end.greenComponent - start.greenComponent) * clamped
+        let blue = start.blueComponent + (end.blueComponent - start.blueComponent) * clamped
+        let alpha = start.alphaComponent + (end.alphaComponent - start.alphaComponent) * clamped
+
+        return Color(nsColor: NSColor(red: red, green: green, blue: blue, alpha: alpha))
+    }
+}
+
+private struct DailyTrafficChartSection: View, Equatable {
+    let records: [DailyTrafficItem]
+    let title: String
+    let dateLabel: String
+    let typeLabel: String
+    let downloadLabel: String
+    let uploadLabel: String
+    let unavailableText: String
+
+    @State private var selectedRecord: DailyTrafficItem?
+
+    static func == (lhs: DailyTrafficChartSection, rhs: DailyTrafficChartSection) -> Bool {
+        lhs.records == rhs.records
+            && lhs.title == rhs.title
+            && lhs.dateLabel == rhs.dateLabel
+            && lhs.typeLabel == rhs.typeLabel
+            && lhs.downloadLabel == rhs.downloadLabel
+            && lhs.uploadLabel == rhs.uploadLabel
+            && lhs.unavailableText == rhs.unavailableText
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                chartLegend
             }
-            return DailyTrafficItem(
-                date: record.date,
-                dayLabel: record.dayLabel,
-                downloadMB: todayDownloadMB,
-                uploadMB: todayUploadMB
-            )
+
+            if #available(macOS 13.0, *) {
+                chartView
+            } else {
+                Text(unavailableText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
+            }
+        }
+        .padding(12)
+        .background(Color(.controlBackgroundColor).opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.secondary.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private var chartLegend: some View {
+        HStack(spacing: 10) {
+            legendItem(title: downloadLabel, color: .blue)
+            legendItem(title: uploadLabel, color: .orange)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+
+    private func legendItem(title: String, color: Color) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(title)
         }
     }
 
     private var selectedChartRecord: DailyTrafficItem? {
         guard let selectedRecord else { return nil }
-        return chartRecords.first(where: { $0.dayLabel == selectedRecord.dayLabel }) ?? selectedRecord
+        return records.first(where: { $0.dayLabel == selectedRecord.dayLabel }) ?? selectedRecord
     }
 
     private var todayChartDayLabel: String? {
-        chartRecords.first { Calendar.current.isDateInToday($0.date) }?.dayLabel
+        records.first { Calendar.current.isDateInToday($0.date) }?.dayLabel
     }
 
     private var maxChartValue: Double {
-        chartRecords.map { max($0.downloadMB, $0.uploadMB) }.max() ?? 0
+        records.map { max($0.downloadMB, $0.uploadMB) }.max() ?? 0
     }
 
     private var yAxisScale: TrafficChartYAxisScale {
         TrafficChartYAxisScale(maxValueMB: maxChartValue)
     }
 
-    private struct TrafficChartYAxisScale {
-        let domain: ClosedRange<Double>
-        let values: [Double]
-
-        var gridValues: [Double] {
-            [0] + values
-        }
-
-        private static let maxDivisionCount = 5
-        private let unit: Unit
-
-        init(maxValueMB: Double) {
-            guard maxValueMB > 0 else {
-                domain = 0...1
-                values = []
-                unit = .megabytes
-                return
-            }
-
-            if maxValueMB >= 1024 {
-                let bounds = Self.axisBounds(upper: max(1, ceil(maxValueMB / 1024)))
-                domain = 0...(bounds.upper * 1024)
-                values = Self.axisValues(upper: bounds.upper, step: bounds.step).map { $0 * 1024 }
-                unit = .gigabytes
-            } else if maxValueMB >= 1 {
-                let bounds = Self.axisBounds(upper: maxValueMB)
-                domain = 0...bounds.upper
-                values = Self.axisValues(upper: bounds.upper, step: bounds.step)
-                unit = .megabytes
-            } else {
-                let maxValueKB = maxValueMB * 1024
-                let bounds = Self.axisBounds(upper: maxValueKB)
-                domain = 0...(bounds.upper / 1024)
-                values = Self.axisValues(upper: bounds.upper, step: bounds.step).map { $0 / 1024 }
-                unit = .kilobytes
-            }
-        }
-
-        func format(_ valueMB: Double) -> String {
-            switch unit {
-            case .kilobytes:
-                return "\(Self.wholeNumber(valueMB * 1024)) K"
-            case .megabytes:
-                return "\(Self.wholeNumber(valueMB)) M"
-            case .gigabytes:
-                return "\(Self.wholeNumber(valueMB / 1024)) G"
-            }
-        }
-
-        private static func axisBounds(upper: Double) -> (upper: Double, step: Double) {
-            let step = integerStep(for: upper / Double(maxDivisionCount))
-            let adjustedUpper = max(step, ceil(upper / step) * step)
-            return (adjustedUpper, step)
-        }
-
-        private static func axisValues(upper: Double, step: Double) -> [Double] {
-            guard upper > 0, step > 0 else { return [] }
-
-            var values: [Double] = []
-            var current = step
-
-            while current <= upper + step * 0.5 {
-                values.append(current)
-                current += step
-            }
-
-            return values
-        }
-
-        private static func integerStep(for value: Double) -> Double {
-            let adjustedValue = max(value, 1)
-            let exponent = floor(log10(adjustedValue))
-            let magnitude = pow(10, exponent)
-            let fraction = adjustedValue / magnitude
-            let multiplier: Double
-
-            if fraction <= 1 {
-                multiplier = 1
-            } else if fraction <= 2 {
-                multiplier = 2
-            } else if fraction <= 5 {
-                multiplier = 5
-            } else {
-                multiplier = 10
-            }
-
-            return multiplier * magnitude
-        }
-
-        private static func wholeNumber(_ value: Double) -> String {
-            String(format: "%.0f", value.rounded())
-        }
-
-        private enum Unit {
-            case kilobytes
-            case megabytes
-            case gigabytes
-        }
-    }
-
     @available(macOS 13.0, *)
     private var chartView: some View {
-        let dateLabel = l10n.t("daily.chart.date")
-        let typeLabel = l10n.t("daily.chart.type")
-        let downloadLabel = l10n.t("daily.download")
-        let uploadLabel = l10n.t("daily.upload")
         let axisScale = yAxisScale
         let todayLabel = todayChartDayLabel
 
         return Chart {
-            ForEach(chartRecords) { record in
+            ForEach(records) { record in
                 LineMark(
                     x: .value(dateLabel, record.dayLabel),
                     y: .value(downloadLabel, record.downloadMB),
@@ -404,7 +336,7 @@ struct DailyTrafficView: View {
                 .symbolSize(24)
             }
 
-            ForEach(chartRecords) { record in
+            ForEach(records) { record in
                 LineMark(
                     x: .value(dateLabel, record.dayLabel),
                     y: .value(uploadLabel, record.uploadMB),
@@ -500,7 +432,7 @@ struct DailyTrafficView: View {
         let localX = location.x - plotFrame.origin.x
         let dayLabel: String? = proxy.value(atX: localX)
         guard let dayLabel,
-              let record = chartRecords.first(where: { $0.dayLabel == dayLabel }) else {
+              let record = records.first(where: { $0.dayLabel == dayLabel }) else {
             return
         }
 
@@ -516,8 +448,8 @@ struct DailyTrafficView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            tooltipMetric(title: l10n.t("daily.download"), value: ByteAxisFormatter.formatMB(record.downloadMB), color: .blue)
-            tooltipMetric(title: l10n.t("daily.upload"), value: ByteAxisFormatter.formatMB(record.uploadMB), color: .orange)
+            tooltipMetric(title: downloadLabel, value: ByteAxisFormatter.formatMB(record.downloadMB), color: .blue)
+            tooltipMetric(title: uploadLabel, value: ByteAxisFormatter.formatMB(record.uploadMB), color: .orange)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
@@ -541,40 +473,139 @@ struct DailyTrafficView: View {
         }
         .font(.caption)
     }
+}
 
-    private func speedValueColor(for bytesPerSecond: Double) -> Color {
-        let ratio = speedColorRatio(for: bytesPerSecond)
-        let startColor = NSColor.labelColor.usingColorSpace(.sRGB) ?? .labelColor
-        let yellow = NSColor.systemYellow.usingColorSpace(.sRGB) ?? .systemYellow
-        let red = NSColor.systemRed.usingColorSpace(.sRGB) ?? .systemRed
+private struct TrafficChartYAxisScale {
+    let domain: ClosedRange<Double>
+    let values: [Double]
 
-        if ratio < 0.5 {
-            return interpolatedColor(from: startColor, to: yellow, t: ratio / 0.5)
+    var gridValues: [Double] {
+        [0] + values
+    }
+
+    private static let maxDivisionCount = 5
+    private let unit: Unit
+
+    init(maxValueMB: Double) {
+        guard maxValueMB > 0 else {
+            domain = 0...1
+            values = []
+            unit = .megabytes
+            return
+        }
+
+        if maxValueMB >= 1024 {
+            let bounds = Self.axisBounds(upper: max(1, ceil(maxValueMB / 1024)))
+            domain = 0...(bounds.upper * 1024)
+            values = Self.axisValues(upper: bounds.upper, step: bounds.step).map { $0 * 1024 }
+            unit = .gigabytes
+        } else if maxValueMB >= 1 {
+            let bounds = Self.axisBounds(upper: maxValueMB)
+            domain = 0...bounds.upper
+            values = Self.axisValues(upper: bounds.upper, step: bounds.step)
+            unit = .megabytes
         } else {
-            return interpolatedColor(from: yellow, to: red, t: (ratio - 0.5) / 0.5)
+            let maxValueKB = maxValueMB * 1024
+            let bounds = Self.axisBounds(upper: maxValueKB)
+            domain = 0...(bounds.upper / 1024)
+            values = Self.axisValues(upper: bounds.upper, step: bounds.step).map { $0 / 1024 }
+            unit = .kilobytes
         }
     }
 
-    private func speedColorRatio(for bytesPerSecond: Double) -> Double {
-        let mbps = max(0, bytesPerSecond) * 8 / 1_000_000
-        let percent = max(0, min(colorRatePercent, 100))
-        let maxRate = max(0, maxColorRateMbps) * percent / 100
-        guard maxRate > 0 else { return 0 }
-        return max(0, min(mbps / maxRate, 1))
+    func format(_ valueMB: Double) -> String {
+        switch unit {
+        case .kilobytes:
+            return "\(Self.wholeNumber(valueMB * 1024)) K"
+        case .megabytes:
+            return "\(Self.wholeNumber(valueMB)) M"
+        case .gigabytes:
+            return "\(Self.wholeNumber(valueMB / 1024)) G"
+        }
     }
 
-    private func interpolatedColor(from start: NSColor, to end: NSColor, t: Double) -> Color {
-        let clamped = CGFloat(max(0, min(1, t)))
-        let red = start.redComponent + (end.redComponent - start.redComponent) * clamped
-        let green = start.greenComponent + (end.greenComponent - start.greenComponent) * clamped
-        let blue = start.blueComponent + (end.blueComponent - start.blueComponent) * clamped
-        let alpha = start.alphaComponent + (end.alphaComponent - start.alphaComponent) * clamped
+    private static func axisBounds(upper: Double) -> (upper: Double, step: Double) {
+        let step = integerStep(for: upper / Double(maxDivisionCount))
+        let adjustedUpper = max(step, ceil(upper / step) * step)
+        return (adjustedUpper, step)
+    }
 
-        return Color(nsColor: NSColor(red: red, green: green, blue: blue, alpha: alpha))
+    private static func axisValues(upper: Double, step: Double) -> [Double] {
+        guard upper > 0, step > 0 else { return [] }
+
+        var values: [Double] = []
+        var current = step
+
+        while current <= upper + step * 0.5 {
+            values.append(current)
+            current += step
+        }
+
+        return values
+    }
+
+    private static func integerStep(for value: Double) -> Double {
+        let adjustedValue = max(value, 1)
+        let exponent = floor(log10(adjustedValue))
+        let magnitude = pow(10, exponent)
+        let fraction = adjustedValue / magnitude
+        let multiplier: Double
+
+        if fraction <= 1 {
+            multiplier = 1
+        } else if fraction <= 2 {
+            multiplier = 2
+        } else if fraction <= 5 {
+            multiplier = 5
+        } else {
+            multiplier = 10
+        }
+
+        return multiplier * magnitude
+    }
+
+    private static func wholeNumber(_ value: Double) -> String {
+        String(format: "%.0f", value.rounded())
+    }
+
+    private enum Unit {
+        case kilobytes
+        case megabytes
+        case gigabytes
     }
 }
 
-struct DailyTrafficItem: Identifiable {
+private enum ByteAxisFormatter {
+    static func formatBytes(_ bytes: Double) -> String {
+        let units = ["B", "K", "M", "G", "T"]
+        var value = max(bytes, 0)
+        var unitIndex = 0
+
+        while value >= 1024 && unitIndex < units.count - 1 {
+            value /= 1024
+            unitIndex += 1
+        }
+
+        let stringValue: String
+        if value >= 100 {
+            stringValue = String(format: "%.0f", value.rounded())
+        } else if value >= 10 {
+            stringValue = String(format: "%.1f", value)
+        } else if unitIndex == 0 {
+            stringValue = String(format: "%.0f", value)
+        } else {
+            stringValue = String(format: "%.1f", value)
+        }
+
+        return "\(stringValue) \(units[unitIndex])"
+    }
+
+    static func formatMB(_ value: Double) -> String {
+        formatBytes(value * 1024 * 1024)
+    }
+}
+
+struct DailyTrafficItem: Identifiable, Equatable {
     let date: Date
     let dayLabel: String
     let downloadMB: Double
@@ -701,7 +732,7 @@ private final class DailyTrafficLiveDisplay: ObservableObject {
 
         guard animationTimer == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+        timer.schedule(deadline: .now(), repeating: .milliseconds(250))
         timer.setEventHandler { [weak self] in
             self?.animationTick()
         }
@@ -819,6 +850,10 @@ final class DailyTrafficViewModel: ObservableObject {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let storedRecords = allRecords
+        var recordsByID: [String: DailyTrafficRecord] = [:]
+        for record in storedRecords {
+            recordsByID[record.id] = record
+        }
         let formatter = Self.dayLabelFormatter
         var items: [DailyTrafficItem] = []
 
@@ -828,7 +863,7 @@ final class DailyTrafficViewModel: ObservableObject {
             }
 
             let recordId = DailyTrafficRecord.dateId(from: date)
-            let record = storedRecords.first(where: { $0.id == recordId })
+            let record = recordsByID[recordId]
             let downloadMB = Double(record?.downloadBytes ?? 0) / (1024 * 1024)
             let uploadMB = Double(record?.uploadBytes ?? 0) / (1024 * 1024)
 
@@ -843,7 +878,8 @@ final class DailyTrafficViewModel: ObservableObject {
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.records = items
+            guard let self, self.records != items else { return }
+            self.records = items
         }
     }
 }

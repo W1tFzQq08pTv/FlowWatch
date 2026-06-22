@@ -30,6 +30,8 @@ final class ProcessTrafficStorage {
     static let shared = ProcessTrafficStorage()
 
     private var records: [AppDailyTrafficRecord] = []
+    private var recordIndexByID: [String: Int] = [:]
+    private var recordIDsByDateID: [String: Set<String>] = [:]
     private let lock = NSLock()
     private var isDirty = false
     private var saveTimer: DispatchSourceTimer?
@@ -53,11 +55,39 @@ final class ProcessTrafficStorage {
             return
         }
         records = decoded
+        rebuildIndexes()
     }
 
     private func saveToFile() {
         guard let encoded = try? JSONEncoder().encode(records) else { return }
         try? encoded.write(to: filePath)
+    }
+
+    private func rebuildIndexes() {
+        recordIndexByID.removeAll(keepingCapacity: true)
+        recordIDsByDateID.removeAll(keepingCapacity: true)
+
+        for index in records.indices {
+            indexRecord(records[index], at: index)
+        }
+    }
+
+    private func indexRecord(_ record: AppDailyTrafficRecord, at index: Int) {
+        recordIndexByID[record.id] = index
+        let dateID = AppDailyTrafficRecord.dateId(from: record.date)
+        recordIDsByDateID[dateID, default: []].insert(record.id)
+    }
+
+    private func recordsLocked(forDateID dateID: String) -> [AppDailyTrafficRecord] {
+        guard let ids = recordIDsByDateID[dateID] else {
+            return []
+        }
+        return ids.compactMap { id in
+            guard let index = recordIndexByID[id], records.indices.contains(index) else {
+                return nil
+            }
+            return records[index]
+        }
     }
 
     private func startSaveTimer() {
@@ -85,21 +115,40 @@ final class ProcessTrafficStorage {
     }
 
     func addBytes(bundleID: String, displayName: String, downloadBytes: UInt64, uploadBytes: UInt64) {
+        _ = addBytesAndReturnTodayRecord(
+            bundleID: bundleID,
+            displayName: displayName,
+            downloadBytes: downloadBytes,
+            uploadBytes: uploadBytes
+        )
+    }
+
+    @discardableResult
+    func addBytesAndReturnTodayRecord(
+        bundleID: String,
+        displayName: String,
+        downloadBytes: UInt64,
+        uploadBytes: UInt64
+    ) -> AppDailyTrafficRecord {
         lock.lock()
         defer { lock.unlock() }
 
         let record = AppDailyTrafficRecord(bundleID: bundleID, displayName: displayName)
-        if let index = records.firstIndex(where: { $0.id == record.id }) {
+        if let index = recordIndexByID[record.id] {
             records[index].downloadBytes &+= downloadBytes
             records[index].uploadBytes &+= uploadBytes
             records[index].displayName = displayName
+            isDirty = true
+            return records[index]
         } else {
             var newRecord = record
             newRecord.downloadBytes = downloadBytes
             newRecord.uploadBytes = uploadBytes
             records.append(newRecord)
+            indexRecord(newRecord, at: records.count - 1)
+            isDirty = true
+            return newRecord
         }
-        isDirty = true
     }
 
     func getTodayRecord(bundleID: String) -> AppDailyTrafficRecord? {
@@ -107,7 +156,10 @@ final class ProcessTrafficStorage {
         defer { lock.unlock() }
 
         let todayRecord = AppDailyTrafficRecord(bundleID: bundleID, displayName: "")
-        return records.first(where: { $0.id == todayRecord.id })
+        guard let index = recordIndexByID[todayRecord.id] else {
+            return nil
+        }
+        return records[index]
     }
 
     func getTodayRecords() -> [AppDailyTrafficRecord] {
@@ -115,7 +167,18 @@ final class ProcessTrafficStorage {
         defer { lock.unlock() }
 
         let todayStr = AppDailyTrafficRecord.dateId(from: Date())
-        return records.filter { $0.id.hasSuffix(todayStr) }
+        return recordsLocked(forDateID: todayStr)
+    }
+
+    func getTodayRecordsByBundleID() -> [String: AppDailyTrafficRecord] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let todayStr = AppDailyTrafficRecord.dateId(from: Date())
+        return Dictionary(
+            uniqueKeysWithValues: recordsLocked(forDateID: todayStr)
+                .map { ($0.bundleID, $0) }
+        )
     }
 
     func getTopApps(limit: Int) -> [AppDailyTrafficRecord] {
@@ -178,6 +241,7 @@ final class ProcessTrafficStorage {
         lock.lock()
         let todayStr = AppDailyTrafficRecord.dateId(from: Date())
         records.removeAll { $0.id.hasSuffix(todayStr) }
+        rebuildIndexes()
         isDirty = true
         lock.unlock()
         saveIfNeeded(force: true)
@@ -186,6 +250,7 @@ final class ProcessTrafficStorage {
     func clearAllRecords() {
         lock.lock()
         records.removeAll()
+        rebuildIndexes()
         isDirty = true
         lock.unlock()
         saveIfNeeded(force: true)
