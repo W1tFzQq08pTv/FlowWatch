@@ -4,6 +4,7 @@
 .gemini-clipboard/
 
 DerivedData/
+.build/
 build/
 dist/
 .tap-test/
