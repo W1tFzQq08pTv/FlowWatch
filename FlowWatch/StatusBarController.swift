@@ -11,6 +11,8 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private let smoothTransitionKey = "statusBarSmoothTransition"
     private let minimalSignalShowsTrafficTotalsKey = "minimalSignalShowsTrafficTotals"
     private let minimalSignalBlinkSpeedPercentKey = "minimalSignalBlinkSpeedPercent"
+    private let mathCurveLoaderSelectionKey = "mathCurveLoaderSelection"
+    private let mathCurveLoaderRandomSwitchIntervalMinutesKey = "mathCurveLoaderRandomSwitchIntervalMinutes"
     private let monitor: NetworkUsageMonitor
     private let processMonitor: ProcessNetworkMonitor
     private let statusItem: NSStatusItem
@@ -59,16 +61,33 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private var animationDuration: CFTimeInterval {
         monitor.sampleInterval
     }
-    private var minimalSignalTimer: DispatchSourceTimer?
+    private var statusAnimationTimer: DispatchSourceTimer?
     private var downloadBlinkPeriod: CFTimeInterval?
     private var uploadBlinkPeriod: CFTimeInterval?
+
+    private struct CurveLoaderTransitionSnapshot {
+        let preset: MathCurveLoaderPreset
+        let animationTimeMilliseconds: Double
+        let phaseOffset: Double
+        let startedAt: CFTimeInterval
+    }
+
+    private var activeCurveLoaderPreset: MathCurveLoaderPreset?
+    private var curveLoaderAnimationTimeMilliseconds: Double = 0
+    private var curveLoaderLastFrameTime: CFTimeInterval?
+    private var curveLoaderPhaseOffset: Double = Double.random(in: 0...1)
+    private var curveLoaderSmoothedSpeedMultiplier: Double = 1
+    private var curveLoaderNextSwitchTime: CFTimeInterval = 0
+    private var curveLoaderTransitionSnapshot: CurveLoaderTransitionSnapshot?
+    private var lastCurveLoaderSelectionRaw: String?
     private let minimalSignalBlinkMinimumMbps: Double = 0.03
     private let minimalSignalBlinkRelaxedMaximumMbps: Double = 20
     private let minimalSignalBlinkSensitiveMaximumMbps: Double = 8
     private let minimalSignalBlinkSlowestPeriod: CFTimeInterval = 1.05
     private let minimalSignalBlinkRelaxedFastestPeriod: CFTimeInterval = 0.55
     private let minimalSignalBlinkSensitiveFastestPeriod: CFTimeInterval = 0.22
-    private let minimalSignalRedrawIntervalMilliseconds = 50
+    private let statusAnimationRedrawIntervalMilliseconds = 33
+    private let curveLoaderPresetTransitionDuration: CFTimeInterval = 0.65
 
     private var smoothTransitionEnabled: Bool {
         if UserDefaults.standard.object(forKey: smoothTransitionKey) == nil {
@@ -89,6 +108,22 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             return 50
         }
         return max(0, min(UserDefaults.standard.double(forKey: minimalSignalBlinkSpeedPercentKey), 100))
+    }
+
+    private var mathCurveLoaderSelection: MathCurveLoaderSelection {
+        if let stored = UserDefaults.standard.string(forKey: mathCurveLoaderSelectionKey),
+           let selection = MathCurveLoaderSelection(rawValue: stored) {
+            return selection
+        }
+        return .random
+    }
+
+    private var curveLoaderRandomSwitchIntervalSeconds: CFTimeInterval {
+        if UserDefaults.standard.object(forKey: mathCurveLoaderRandomSwitchIntervalMinutesKey) == nil {
+            return 10 * 60
+        }
+        let minutes = UserDefaults.standard.double(forKey: mathCurveLoaderRandomSwitchIntervalMinutesKey)
+        return max(1, min(minutes, 60)) * 60
     }
 
     private let cachedWhite = NSColor.white.usingColorSpace(.sRGB) ?? .white
@@ -163,7 +198,16 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private func bindUserDefaults() {
         let defaults = UserDefaults.standard
-        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey, minimalSignalBlinkSpeedPercentKey]
+        let keys = [
+            displayModeKey,
+            maxColorRateKey,
+            colorRatePercentKey,
+            smoothTransitionKey,
+            minimalSignalShowsTrafficTotalsKey,
+            minimalSignalBlinkSpeedPercentKey,
+            mathCurveLoaderSelectionKey,
+            mathCurveLoaderRandomSwitchIntervalMinutesKey
+        ]
         for key in keys {
             defaults.addObserver(self, forKeyPath: key, options: [.new, .old], context: nil)
         }
@@ -179,13 +223,26 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
             return
         }
-        let watchedKeys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey, minimalSignalBlinkSpeedPercentKey]
+        let watchedKeys = [
+            displayModeKey,
+            maxColorRateKey,
+            colorRatePercentKey,
+            smoothTransitionKey,
+            minimalSignalShowsTrafficTotalsKey,
+            minimalSignalBlinkSpeedPercentKey,
+            mathCurveLoaderSelectionKey,
+            mathCurveLoaderRandomSwitchIntervalMinutesKey
+        ]
         guard watchedKeys.contains(keyPath) else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
             return
         }
         Task { @MainActor [weak self] in
-            self?.updateStatusButtonContent()
+            guard let self else { return }
+            if keyPath == self.mathCurveLoaderRandomSwitchIntervalMinutesKey {
+                self.curveLoaderNextSwitchTime = CACurrentMediaTime() + self.curveLoaderRandomSwitchIntervalSeconds
+            }
+            self.updateStatusButtonContent()
         }
     }
 
@@ -280,6 +337,14 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
                 todayUploaded: displayedTodayUploaded
             )
         }
+        if displayMode == .curveLoader {
+            return curveLoaderRenderKey(
+                downloadBps: displayedDownloadBps,
+                uploadBps: displayedUploadBps,
+                todayDownloaded: displayedTodayDownloaded,
+                todayUploaded: displayedTodayUploaded
+            )
+        }
         let downSpeed = monitor.fixedWidthCompactSpeed(displayedDownloadBps)
         let upSpeed = monitor.fixedWidthCompactSpeed(displayedUploadBps)
         let downTotal = monitor.fixedWidthDataAmount(UInt64(displayedTodayDownloaded))
@@ -290,14 +355,14 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func updateStatusButtonContent() {
-        syncMinimalSignalTimer()
+        syncStatusAnimationTimer()
         let key = currentRenderKey()
         if animationTimer != nil && key == lastRenderedKey { return }
-        if displayMode == .minimalSignal && key == lastRenderedKey { return }
+        if isDynamicStatusMode && key == lastRenderedKey { return }
         lastRenderedKey = key
 
         guard let button = statusItem.button else { return }
-        statusItem.length = displayMode == .minimalSignal && !minimalSignalShowsTrafficTotals ? 18 : NSStatusItem.variableLength
+        statusItem.length = isDynamicStatusMode && !minimalSignalShowsTrafficTotals ? 20 : NSStatusItem.variableLength
 
         switch displayMode {
         case .speed:
@@ -308,7 +373,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             renderCombined(into: button)
         case .minimalSignal:
             renderMinimalSignal(into: button)
+        case .curveLoader:
+            renderCurveLoader(into: button)
         }
+    }
+
+    private var isDynamicStatusMode: Bool {
+        displayMode == .minimalSignal || displayMode == .curveLoader
     }
 
     private func colorForSpeed(_ bytesPerSecond: Double) -> NSColor {
@@ -379,6 +450,25 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         return "\(displayMode.rawValue)|dots|\(downColor)|\(upColor)|\(downAlpha)|\(upAlpha)"
     }
 
+    private func curveLoaderRenderKey(downloadBps: Double, uploadBps: Double, todayDownloaded: Double, todayUploaded: Double) -> String {
+        let now = CACurrentMediaTime()
+        let preset = currentCurveLoaderPreset(at: now)
+        let frame = Int((now * 1_000 / Double(statusAnimationRedrawIntervalMilliseconds)).rounded(.down))
+        let color = minimalSignalColorBucket(max(downloadBps, uploadBps))
+        let speedBucket = Int((curveLoaderSpeedMultiplier(forSpeedBytesPerSecond: max(downloadBps, uploadBps)) * 20).rounded())
+        let showsTotals = minimalSignalShowsTrafficTotals
+        if showsTotals {
+            let totals = minimalSignalDataAmountParts(
+                uploadBytes: UInt64(todayUploaded),
+                downloadBytes: UInt64(todayDownloaded)
+            )
+            let upTotal = "\(totals.up.value) \(totals.up.unit)"
+            let downTotal = "\(totals.down.value) \(totals.down.unit)"
+            return "\(displayMode.rawValue)|\(preset.rawValue)|\(frame)|\(color)|\(speedBucket)|totals|\(upTotal)|\(downTotal)"
+        }
+        return "\(displayMode.rawValue)|\(preset.rawValue)|\(frame)|\(color)|\(speedBucket)|icon"
+    }
+
     private func updateMinimalSignalBlinkPeriods(downloadBps: Double, uploadBps: Double) {
         downloadBlinkPeriod = blinkPeriod(forSpeedBytesPerSecond: downloadBps)
         uploadBlinkPeriod = blinkPeriod(forSpeedBytesPerSecond: uploadBps)
@@ -407,30 +497,97 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         return CGFloat(0.12 + 0.88 * pulse)
     }
 
-    private func syncMinimalSignalTimer() {
-        guard displayMode == .minimalSignal else {
-            stopMinimalSignalTimer()
+    private func curveLoaderSpeedMultiplier(forSpeedBytesPerSecond bytesPerSecond: Double) -> Double {
+        let mbps = max(0, bytesPerSecond) * 8 / 1_000_000
+        let speedRatio = minimalSignalBlinkSpeedPercent / 100
+        let maximumMbps = minimalSignalBlinkRelaxedMaximumMbps - ((minimalSignalBlinkRelaxedMaximumMbps - minimalSignalBlinkSensitiveMaximumMbps) * speedRatio)
+        guard maximumMbps > minimalSignalBlinkMinimumMbps else {
+            return 1
+        }
+        let ratio = max(0, min((mbps - minimalSignalBlinkMinimumMbps) / (maximumMbps - minimalSignalBlinkMinimumMbps), 1))
+        let emphasizedRatio = ratio.squareRoot()
+        return 0.45 + emphasizedRatio * 2.55
+    }
+
+    private func currentCurveLoaderPreset(at now: CFTimeInterval) -> MathCurveLoaderPreset {
+        let selection = mathCurveLoaderSelection
+        let selectionRaw = selection.rawValue
+        if selectionRaw != lastCurveLoaderSelectionRaw {
+            curveLoaderNextSwitchTime = 0
+            lastCurveLoaderSelectionRaw = selectionRaw
+        }
+
+        switch selection {
+        case .preset(let preset):
+            if activeCurveLoaderPreset != preset {
+                setActiveCurveLoaderPreset(preset, at: now)
+                curveLoaderNextSwitchTime = 0
+            }
+            return preset
+        case .random:
+            if activeCurveLoaderPreset == nil || now >= curveLoaderNextSwitchTime {
+                let nextPreset = randomCurveLoaderPreset(excluding: activeCurveLoaderPreset)
+                setActiveCurveLoaderPreset(nextPreset, at: now)
+                curveLoaderNextSwitchTime = now + curveLoaderRandomSwitchIntervalSeconds
+            }
+            return activeCurveLoaderPreset ?? .originalThinking
+        }
+    }
+
+    private func randomCurveLoaderPreset(excluding current: MathCurveLoaderPreset?) -> MathCurveLoaderPreset {
+        let presets = MathCurveLoaderPreset.allCases
+        guard presets.count > 1 else {
+            return presets.first ?? .originalThinking
+        }
+        let candidates = presets.filter { $0 != current }
+        return candidates.randomElement() ?? presets.randomElement() ?? .originalThinking
+    }
+
+    private func setActiveCurveLoaderPreset(_ preset: MathCurveLoaderPreset, at now: CFTimeInterval) {
+        if let activeCurveLoaderPreset, activeCurveLoaderPreset != preset {
+            curveLoaderTransitionSnapshot = CurveLoaderTransitionSnapshot(
+                preset: activeCurveLoaderPreset,
+                animationTimeMilliseconds: curveLoaderAnimationTimeMilliseconds,
+                phaseOffset: curveLoaderPhaseOffset,
+                startedAt: now
+            )
+        } else {
+            curveLoaderTransitionSnapshot = nil
+        }
+        activeCurveLoaderPreset = preset
+        curveLoaderAnimationTimeMilliseconds = 0
+        curveLoaderLastFrameTime = now
+        curveLoaderSmoothedSpeedMultiplier = 1
+        curveLoaderPhaseOffset = Double.random(in: 0...1)
+        lastRenderedKey = ""
+    }
+
+    private func syncStatusAnimationTimer() {
+        guard isDynamicStatusMode else {
+            stopStatusAnimationTimer()
             return
         }
-        guard minimalSignalTimer == nil else { return }
+        guard statusAnimationTimer == nil else { return }
 
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(minimalSignalRedrawIntervalMilliseconds))
+        timer.schedule(deadline: .now(), repeating: .milliseconds(statusAnimationRedrawIntervalMilliseconds))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            if self.displayMode == .minimalSignal {
+            if self.isDynamicStatusMode {
                 self.updateStatusButtonContent()
             } else {
-                self.stopMinimalSignalTimer()
+                self.stopStatusAnimationTimer()
             }
         }
         timer.resume()
-        minimalSignalTimer = timer
+        statusAnimationTimer = timer
     }
 
-    private func stopMinimalSignalTimer() {
-        minimalSignalTimer?.cancel()
-        minimalSignalTimer = nil
+    private func stopStatusAnimationTimer() {
+        statusAnimationTimer?.cancel()
+        statusAnimationTimer = nil
+        curveLoaderLastFrameTime = nil
+        curveLoaderTransitionSnapshot = nil
     }
 
     private func makeMinimalSignalImage() -> NSImage? {
@@ -442,6 +599,158 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         return NSImage(size: canvasSize, flipped: false) { _ in
             self.drawMinimalSignalDots(originX: 6)
 
+            return true
+        }
+    }
+
+    private func makeCurveLoaderImage() -> NSImage? {
+        if minimalSignalShowsTrafficTotals {
+            return makeCurveLoaderTotalsImage()
+        }
+
+        let now = CACurrentMediaTime()
+        return makeCurveLoaderIconImage(at: now)
+    }
+
+    private func makeCurveLoaderIconImage(at now: CFTimeInterval) -> NSImage? {
+        let preset = currentCurveLoaderPreset(at: now)
+        let speed = max(displayedDownloadBps, displayedUploadBps)
+        let animationTime = curveLoaderAnimationTime(at: now, speedBytesPerSecond: speed)
+        let color = colorForSpeed(speed)
+        let iconSize = NSSize(width: 18, height: 18)
+        let currentImage = MathCurveLoaderRenderer.makeImage(
+            preset: preset,
+            timeMilliseconds: animationTime,
+            phaseOffset: curveLoaderPhaseOffset,
+            color: color,
+            size: iconSize
+        )
+
+        guard let currentImage else {
+            return nil
+        }
+
+        guard let transitionSnapshot = curveLoaderTransitionSnapshot else {
+            return currentImage
+        }
+
+        let rawProgress = (now - transitionSnapshot.startedAt) / curveLoaderPresetTransitionDuration
+        guard rawProgress < 1 else {
+            curveLoaderTransitionSnapshot = nil
+            return currentImage
+        }
+
+        let progress = CGFloat(easeInOutSine(max(0, min(rawProgress, 1))))
+        let previousTime = transitionSnapshot.animationTimeMilliseconds
+            + max(0, now - transitionSnapshot.startedAt) * 1_000 * curveLoaderSmoothedSpeedMultiplier
+        guard let previousImage = MathCurveLoaderRenderer.makeImage(
+            preset: transitionSnapshot.preset,
+            timeMilliseconds: previousTime,
+            phaseOffset: transitionSnapshot.phaseOffset,
+            color: color,
+            size: iconSize
+        ) else {
+            return currentImage
+        }
+
+        return blendedCurveLoaderImage(
+            previousImage: previousImage,
+            currentImage: currentImage,
+            progress: progress,
+            size: iconSize
+        )
+    }
+
+    private func curveLoaderAnimationTime(at now: CFTimeInterval, speedBytesPerSecond: Double) -> Double {
+        let targetMultiplier = curveLoaderSpeedMultiplier(forSpeedBytesPerSecond: speedBytesPerSecond)
+        guard let lastFrameTime = curveLoaderLastFrameTime else {
+            curveLoaderLastFrameTime = now
+            curveLoaderSmoothedSpeedMultiplier = targetMultiplier
+            return curveLoaderAnimationTimeMilliseconds
+        }
+
+        let delta = min(max(now - lastFrameTime, 0), 0.20)
+        curveLoaderLastFrameTime = now
+
+        let smoothing = 1 - exp(-delta / 0.18)
+        curveLoaderSmoothedSpeedMultiplier += (targetMultiplier - curveLoaderSmoothedSpeedMultiplier) * smoothing
+        curveLoaderAnimationTimeMilliseconds += delta * 1_000 * curveLoaderSmoothedSpeedMultiplier
+        return curveLoaderAnimationTimeMilliseconds
+    }
+
+    private func makeCurveLoaderTotalsImage() -> NSImage? {
+        let now = CACurrentMediaTime()
+        guard let icon = makeCurveLoaderIconImage(at: now) else {
+            return nil
+        }
+
+        let totals = minimalSignalDataAmountParts(
+            uploadBytes: UInt64(displayedTodayUploaded),
+            downloadBytes: UInt64(displayedTodayDownloaded)
+        )
+        let up = totals.up
+        let down = totals.down
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: cachedBadgeFont
+        ]
+
+        let upNumberAttr = NSAttributedString(
+            string: up.value,
+            attributes: attributes.merging([.foregroundColor: colorForSpeed(displayedUploadBps)]) { _, new in new }
+        )
+        let upUnitAttr = NSAttributedString(
+            string: up.unit,
+            attributes: attributes.merging([.foregroundColor: colorForSpeed(displayedUploadBps)]) { _, new in new }
+        )
+        let downNumberAttr = NSAttributedString(
+            string: down.value,
+            attributes: attributes.merging([.foregroundColor: colorForSpeed(displayedDownloadBps)]) { _, new in new }
+        )
+        let downUnitAttr = NSAttributedString(
+            string: down.unit,
+            attributes: attributes.merging([.foregroundColor: colorForSpeed(displayedDownloadBps)]) { _, new in new }
+        )
+
+        let iconSize = NSSize(width: 18, height: 18)
+        let leadingPadding: CGFloat = 1
+        let trailingPadding: CGFloat = 2
+        let gap: CGFloat = 5
+        let unitGap: CGFloat = 4
+        let topRowCenterY: CGFloat = 14
+        let bottomRowCenterY: CGFloat = 4
+        let upNumberSize = upNumberAttr.size()
+        let upUnitSize = upUnitAttr.size()
+        let downNumberSize = downNumberAttr.size()
+        let downUnitSize = downUnitAttr.size()
+        let numberColumnWidth = max(upNumberSize.width, downNumberSize.width)
+        let unitColumnWidth = max(upUnitSize.width, downUnitSize.width)
+        let iconX = leadingPadding
+        let textX = iconX + iconSize.width + gap
+        let unitX = textX + numberColumnWidth + unitGap
+        let canvasSize = NSSize(
+            width: unitX + unitColumnWidth + trailingPadding,
+            height: 18
+        )
+
+        return NSImage(size: canvasSize, flipped: false) { _ in
+            icon.draw(in: NSRect(origin: NSPoint(x: iconX, y: 0), size: iconSize))
+            upNumberAttr.draw(at: NSPoint(
+                x: textX + numberColumnWidth - upNumberSize.width,
+                y: topRowCenterY - upNumberSize.height / 2
+            ))
+            upUnitAttr.draw(at: NSPoint(
+                x: unitX,
+                y: topRowCenterY - upUnitSize.height / 2
+            ))
+            downNumberAttr.draw(at: NSPoint(
+                x: textX + numberColumnWidth - downNumberSize.width,
+                y: bottomRowCenterY - downNumberSize.height / 2
+            ))
+            downUnitAttr.draw(at: NSPoint(
+                x: unitX,
+                y: bottomRowCenterY - downUnitSize.height / 2
+            ))
             return true
         }
     }
@@ -741,6 +1050,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         }
     }
 
+    private func renderCurveLoader(into button: NSStatusBarButton) {
+        if let image = makeCurveLoaderImage() {
+            button.image = image
+            button.title = ""
+        }
+    }
+
     private var displayMode: FlowWatchApp.StatusBarDisplayMode {
         get {
             if let stored = UserDefaults.standard.string(forKey: displayModeKey),
@@ -981,6 +1297,14 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
                 todayUploaded: targetTodayUploaded
             )
         }
+        if displayMode == .curveLoader {
+            return curveLoaderRenderKey(
+                downloadBps: targetDownloadBps,
+                uploadBps: targetUploadBps,
+                todayDownloaded: targetTodayDownloaded,
+                todayUploaded: targetTodayUploaded
+            )
+        }
         let downSpeed = monitor.fixedWidthCompactSpeed(targetDownloadBps)
         let upSpeed = monitor.fixedWidthCompactSpeed(targetUploadBps)
         let downTotal = monitor.fixedWidthDataAmount(UInt64(targetTodayDownloaded))
@@ -997,6 +1321,37 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private func easeOutCubic(_ t: Double) -> Double {
         1 - pow(1 - t, 3)
+    }
+
+    private func easeInOutSine(_ t: Double) -> Double {
+        0.5 - cos(max(0, min(t, 1)) * .pi) / 2
+    }
+
+    private func blendedCurveLoaderImage(
+        previousImage: NSImage,
+        currentImage: NSImage,
+        progress: CGFloat,
+        size: NSSize
+    ) -> NSImage {
+        NSImage(size: size, flipped: false) { rect in
+            previousImage.draw(
+                in: rect,
+                from: NSRect(origin: .zero, size: previousImage.size),
+                operation: .sourceOver,
+                fraction: max(0, 1 - progress),
+                respectFlipped: false,
+                hints: nil
+            )
+            currentImage.draw(
+                in: rect,
+                from: NSRect(origin: .zero, size: currentImage.size),
+                operation: .sourceOver,
+                fraction: min(1, progress),
+                respectFlipped: false,
+                hints: nil
+            )
+            return true
+        }
     }
 
     private func rebuildMenu() {
@@ -1052,7 +1407,16 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     deinit {
         let defaults = UserDefaults.standard
-        let keys = [displayModeKey, maxColorRateKey, colorRatePercentKey, smoothTransitionKey, minimalSignalShowsTrafficTotalsKey, minimalSignalBlinkSpeedPercentKey]
+        let keys = [
+            displayModeKey,
+            maxColorRateKey,
+            colorRatePercentKey,
+            smoothTransitionKey,
+            minimalSignalShowsTrafficTotalsKey,
+            minimalSignalBlinkSpeedPercentKey,
+            mathCurveLoaderSelectionKey,
+            mathCurveLoaderRandomSwitchIntervalMinutesKey
+        ]
         for key in keys {
             defaults.removeObserver(self, forKeyPath: key)
         }

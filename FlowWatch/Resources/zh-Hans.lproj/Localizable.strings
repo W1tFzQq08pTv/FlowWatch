@@ -50,10 +50,19 @@
 "settings.displayMode.total" = "今日累计";
 "settings.displayMode.both" = "都显示";
 "settings.displayMode.minimalSignal" = "极简信号";
+"settings.displayMode.curveLoader" = "曲线动画";
 "settings.minimalSignal.showTotals" = "显示上下行统计";
 "settings.minimalSignal.showTotals.desc" = "在极简信号旁显示今日上传和下载累计流量。";
 "settings.minimalSignal.blinkSpeed" = "闪烁速度";
 "settings.minimalSignal.blinkSpeed.desc" = "控制极简信号灯随上下行速率闪烁的快慢。";
+"settings.curveLoader.selection" = "曲线样式";
+"settings.curveLoader.selection.desc" = "选择固定曲线，或让 FlowWatch 按设置的间隔自动随机切换。";
+"settings.curveLoader.random" = "全部随机";
+"settings.curveLoader.randomSwitchInterval" = "自动更换间隔";
+"settings.curveLoader.randomSwitchInterval.desc" = "选择全部随机时，每隔这个时长切换到下一种曲线动画。";
+"settings.curveLoader.randomSwitchInterval.value" = "%d 分钟";
+"settings.curveLoader.animationSpeed" = "动画速度";
+"settings.curveLoader.animationSpeed.desc" = "控制曲线粒子、旋转和呼吸随最高网速加速的灵敏度。";
 
 "settings.maxColorRate.limitTitle" = "上色上限";
 "settings.maxColorRate.intensityTitle" = "上色强度";
