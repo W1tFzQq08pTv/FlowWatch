@@ -13,6 +13,8 @@ struct SettingsView: View {
     @AppStorage("statusBarSmoothTransition") private var smoothTransition: Bool = true
     @AppStorage("minimalSignalShowsTrafficTotals") private var minimalSignalShowsTrafficTotals: Bool = true
     @AppStorage("minimalSignalBlinkSpeedPercent") private var minimalSignalBlinkSpeedPercent: Double = 50
+    @AppStorage("mathCurveLoaderSelection") private var mathCurveLoaderSelectionRaw: String = MathCurveLoaderSelection.random.rawValue
+    @AppStorage("mathCurveLoaderRandomSwitchIntervalMinutes") private var mathCurveLoaderRandomSwitchIntervalMinutes: Double = 10
     @AppStorage("logging.enabled") private var loggingEnabled: Bool = true
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var selectedSection: SettingsSection? = .general
@@ -39,7 +41,7 @@ struct SettingsView: View {
                 .padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .background(Color(.textBackgroundColor).opacity(0.28))
+            .background(.ultraThinMaterial)
         }
         .frame(minWidth: 860, minHeight: 580)
         .onAppear {
@@ -108,21 +110,17 @@ struct SettingsView: View {
             HStack(spacing: 10) {
                 Image(systemName: section.systemImage)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isSelected ? Color.white : section.tint)
+                    .foregroundStyle(section.tint)
                     .frame(width: 28, height: 28)
-                    .background(
-                        (isSelected ? Color.white.opacity(0.16) : section.tint.opacity(0.12)),
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    )
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(l10n.t(section.titleKey))
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                        .foregroundStyle(Color.primary)
                     if let subtitleKey = section.subtitleKey {
                         Text(l10n.t(subtitleKey))
                             .font(.caption2)
-                            .foregroundStyle(isSelected ? Color.white.opacity(0.78) : Color.secondary)
+                            .foregroundStyle(Color.secondary)
                             .lineLimit(1)
                     }
                 }
@@ -133,7 +131,7 @@ struct SettingsView: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                isSelected ? section.tint : Color.clear,
+                isSelected ? section.tint.opacity(0.12) : Color.clear,
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -152,7 +150,6 @@ struct SettingsView: View {
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(currentSection.tint)
                 .frame(width: 42, height: 42)
-                .background(currentSection.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(l10n.t(currentSection.titleKey))
@@ -168,12 +165,11 @@ struct SettingsView: View {
 
             sectionStatusBadge
         }
-        .padding(16)
-        .background(currentSection.tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(currentSection.tint.opacity(0.16), lineWidth: 1)
-        )
+        .padding(.bottom, 12)
+        .overlay(alignment: .bottom) {
+            Divider()
+                .opacity(0.45)
+        }
     }
 
     @ViewBuilder
@@ -217,12 +213,14 @@ struct SettingsView: View {
         case .statusBar:
             settingsPanel(title: l10n.t("settings.group.statusDisplay"), systemImage: "menubar.rectangle") {
                 settingsRow(title: l10n.t("settings.displayContent.label")) {
-                    optionSelector(
-                        FlowWatchApp.StatusBarDisplayMode.allCases.map { (l10n.t($0.titleKey), $0.rawValue) },
-                        selection: $statusBarDisplayModeRaw
+                    FlowWatchMenuControl(
+                        options: FlowWatchApp.StatusBarDisplayMode.allCases.map { (l10n.t($0.titleKey), $0.rawValue) },
+                        selection: $statusBarDisplayModeRaw,
+                        tint: currentSection.tint,
+                        width: 220
                     )
                 }
-                if FlowWatchApp.StatusBarDisplayMode(rawValue: statusBarDisplayModeRaw) == .minimalSignal {
+                if currentStatusBarDisplayMode == .minimalSignal || currentStatusBarDisplayMode == .curveLoader {
                     rowDivider
                     settingsRow(
                         title: l10n.t("settings.minimalSignal.showTotals"),
@@ -230,13 +228,56 @@ struct SettingsView: View {
                     ) {
                         ModernSwitch(isOn: $minimalSignalShowsTrafficTotals, tint: currentSection.tint)
                     }
+                    if currentStatusBarDisplayMode == .curveLoader {
+                        rowDivider
+                        settingsRow(
+                            title: l10n.t("settings.curveLoader.selection"),
+                            detail: l10n.t("settings.curveLoader.selection.desc")
+                        ) {
+                            FlowWatchMenuControl(
+                                options: mathCurveLoaderOptions,
+                                selection: mathCurveLoaderSelectionBinding,
+                                tint: currentSection.tint,
+                                width: 260
+                            )
+                        }
+                        if currentMathCurveLoaderSelection == .random {
+                            rowDivider
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(l10n.t("settings.curveLoader.randomSwitchInterval"))
+                                            .font(.system(size: 13, weight: .medium))
+                                        Text(l10n.t("settings.curveLoader.randomSwitchInterval.desc"))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    Spacer()
+                                    Text(String(
+                                        format: l10n.t("settings.curveLoader.randomSwitchInterval.value"),
+                                        Int(mathCurveLoaderRandomSwitchIntervalMinutesBinding.wrappedValue.rounded())
+                                    ))
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                }
+                                ModernSlider(
+                                    value: mathCurveLoaderRandomSwitchIntervalMinutesBinding,
+                                    range: 1...60,
+                                    step: 1,
+                                    tint: currentSection.tint
+                                )
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
                     rowDivider
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(l10n.t("settings.minimalSignal.blinkSpeed"))
+                                Text(l10n.t(currentStatusBarDisplayMode == .curveLoader ? "settings.curveLoader.animationSpeed" : "settings.minimalSignal.blinkSpeed"))
                                     .font(.system(size: 13, weight: .medium))
-                                Text(l10n.t("settings.minimalSignal.blinkSpeed.desc"))
+                                Text(l10n.t(currentStatusBarDisplayMode == .curveLoader ? "settings.curveLoader.animationSpeed.desc" : "settings.minimalSignal.blinkSpeed.desc"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -281,10 +322,11 @@ struct SettingsView: View {
                         .focused($focusedField, equals: .maxColorRate)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
-                        .background(Color(.windowBackgroundColor).opacity(0.82), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .stroke(currentSection.tint.opacity(focusedField == .maxColorRate ? 0.42 : 0.14), lineWidth: 1)
+                        .flowWatchGlassPanel(
+                            cornerRadius: 7,
+                            material: .thin,
+                            strokeOpacity: focusedField == .maxColorRate ? 0.24 : 0.12,
+                            shadowOpacity: 0.02
                         )
                         Text("Mbps")
                             .foregroundStyle(.secondary)
@@ -512,12 +554,11 @@ struct SettingsView: View {
     }
 
     private func overviewTile(title: String, value: String, systemImage: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)
-                .frame(width: 26, height: 26)
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -529,13 +570,12 @@ struct SettingsView: View {
                     .minimumScaleFactor(0.85)
             }
         }
-        .padding(12)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
-        )
+        .overlay(alignment: .bottom) {
+            Divider()
+                .opacity(0.25)
+        }
     }
 
     private func settingsPanel<Content: View>(
@@ -548,8 +588,7 @@ struct SettingsView: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(currentSection.tint)
-                    .frame(width: 24, height: 24)
-                    .background(currentSection.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .frame(width: 20)
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
@@ -560,13 +599,8 @@ struct SettingsView: View {
 
             content()
         }
-        .padding(16)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(Color(.controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
-        )
     }
 
     private func settingsRow<Control: View>(
@@ -593,7 +627,7 @@ struct SettingsView: View {
 
     private var rowDivider: some View {
         Divider()
-            .opacity(0.45)
+            .opacity(0.30)
     }
 
     private func statusBadge(title: String, value: String, tint: Color) -> some View {
@@ -605,13 +639,6 @@ struct SettingsView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(tint)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color(.controlBackgroundColor).opacity(0.72), in: Capsule())
-        .overlay(
-            Capsule()
-                .stroke(tint.opacity(0.14), lineWidth: 1)
-        )
     }
 
     private var colorPreviewStrip: some View {
@@ -633,7 +660,7 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
-        .background(Color(.windowBackgroundColor).opacity(0.72), in: Capsule())
+        .flowWatchGlassCapsule(material: .thin)
     }
 
     private func previewSpeedColor(mbps: Double) -> Color {
@@ -663,9 +690,44 @@ struct SettingsView: View {
         return Color(nsColor: NSColor(red: red, green: green, blue: blue, alpha: alpha))
     }
 
+    private var currentStatusBarDisplayMode: FlowWatchApp.StatusBarDisplayMode {
+        FlowWatchApp.StatusBarDisplayMode(rawValue: statusBarDisplayModeRaw) ?? .speed
+    }
+
     private var currentDisplayModeLabel: String {
-        let mode = FlowWatchApp.StatusBarDisplayMode(rawValue: statusBarDisplayModeRaw) ?? .speed
-        return l10n.t(mode.titleKey)
+        l10n.t(currentStatusBarDisplayMode.titleKey)
+    }
+
+    private var mathCurveLoaderOptions: [(String, String)] {
+        [(l10n.t("settings.curveLoader.random"), MathCurveLoaderSelection.random.rawValue)]
+            + MathCurveLoaderPreset.allCases.map { ($0.displayName, $0.rawValue) }
+    }
+
+    private var currentMathCurveLoaderSelection: MathCurveLoaderSelection {
+        MathCurveLoaderSelection(rawValue: mathCurveLoaderSelectionRaw) ?? .random
+    }
+
+    private var mathCurveLoaderSelectionBinding: Binding<String> {
+        Binding(
+            get: {
+                currentMathCurveLoaderSelection.rawValue
+            },
+            set: { newValue in
+                mathCurveLoaderSelectionRaw = MathCurveLoaderSelection(rawValue: newValue)?.rawValue
+                    ?? MathCurveLoaderSelection.random.rawValue
+            }
+        )
+    }
+
+    private var mathCurveLoaderRandomSwitchIntervalMinutesBinding: Binding<Double> {
+        Binding(
+            get: {
+                max(1, min(mathCurveLoaderRandomSwitchIntervalMinutes.rounded(), 60))
+            },
+            set: { newValue in
+                mathCurveLoaderRandomSwitchIntervalMinutes = max(1, min(newValue.rounded(), 60))
+            }
+        )
     }
 
     private func optionSelector<Value: Hashable>(
@@ -683,27 +745,20 @@ struct SettingsView: View {
                 } label: {
                     Text(option.0)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                        .foregroundStyle(Color.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                         .frame(minWidth: 46)
-                        .background(
-                            isSelected ? currentSection.tint : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        )
+                        .flowWatchGlassButtonSurface(tint: currentSection.tint, isSelected: isSelected, cornerRadius: 7)
                         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(3)
-        .background(Color(.windowBackgroundColor).opacity(0.82), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
-        )
+        .flowWatchGlassPanel(cornerRadius: 9, material: .thin)
         .animation(.easeInOut(duration: 0.16), value: selection.wrappedValue)
     }
 
@@ -940,18 +995,22 @@ private struct ModernSwitch: View {
         } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
                 Capsule()
-                    .fill(isOn ? tint : Color.secondary.opacity(0.18))
+                    .fill(.thinMaterial)
                     .frame(width: 46, height: 26)
+                    .overlay(
+                        Capsule()
+                            .fill(isOn ? tint.opacity(0.22) : Color.secondary.opacity(0.10))
+                    )
 
                 Circle()
-                    .fill(Color(.windowBackgroundColor))
+                    .fill(.regularMaterial)
                     .frame(width: 20, height: 20)
-                    .shadow(color: Color.black.opacity(isOn ? 0.18 : 0.10), radius: 3, x: 0, y: 1)
+                    .shadow(color: Color.black.opacity(isOn ? 0.10 : 0.07), radius: 3, x: 0, y: 1)
                     .padding(3)
             }
             .overlay(
                 Capsule()
-                    .stroke(isOn ? tint.opacity(0.28) : Color.secondary.opacity(0.16), lineWidth: 1)
+                    .stroke(isOn ? tint.opacity(0.18) : Color.secondary.opacity(0.12), lineWidth: 1)
             )
             .opacity(isEnabled ? 1 : 0.45)
         }
@@ -971,13 +1030,10 @@ private struct ModernActionButtonStyle: ButtonStyle {
             .foregroundStyle(isDestructive ? Color.red : tint)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(
-                (isDestructive ? Color.red : tint).opacity(configuration.isPressed ? 0.18 : 0.10),
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke((isDestructive ? Color.red : tint).opacity(0.18), lineWidth: 1)
+            .flowWatchGlassButtonSurface(
+                tint: isDestructive ? .red : tint,
+                isSelected: configuration.isPressed,
+                cornerRadius: 7
             )
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
@@ -997,20 +1053,20 @@ private struct ModernSlider: View {
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.secondary.opacity(0.14))
+                    .fill(.thinMaterial)
                     .frame(height: 8)
 
                 Capsule()
-                    .fill(tint)
+                    .fill(tint.opacity(0.52))
                     .frame(width: width * progress, height: 8)
 
                 Circle()
-                    .fill(Color(.windowBackgroundColor))
+                    .fill(.regularMaterial)
                     .frame(width: 18, height: 18)
-                    .shadow(color: Color.black.opacity(0.16), radius: 4, x: 0, y: 1)
+                    .shadow(color: Color.black.opacity(0.08), radius: 3, x: 0, y: 1)
                     .overlay(
                         Circle()
-                            .stroke(tint.opacity(0.35), lineWidth: 1)
+                            .stroke(tint.opacity(0.24), lineWidth: 1)
                     )
                     .offset(x: max(0, min(width - 18, width * progress - 9)))
             }

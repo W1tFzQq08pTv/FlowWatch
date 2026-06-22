@@ -1,6 +1,75 @@
 import AppKit
 import SwiftUI
 
+enum FlowWatchGlassMaterial {
+    case ultraThin
+    case thin
+    case regular
+
+    var material: Material {
+        switch self {
+        case .ultraThin:
+            return .ultraThinMaterial
+        case .thin:
+            return .thinMaterial
+        case .regular:
+            return .regularMaterial
+        }
+    }
+}
+
+extension View {
+    func flowWatchGlassPanel(
+        cornerRadius: CGFloat = 8,
+        material: FlowWatchGlassMaterial = .regular,
+        strokeOpacity: Double = 0.07,
+        shadowOpacity: Double = 0.025
+    ) -> some View {
+        self
+            .background(material.material, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.primary.opacity(strokeOpacity), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(shadowOpacity), radius: 8, x: 0, y: 2)
+    }
+
+    func flowWatchGlassCapsule(
+        material: FlowWatchGlassMaterial = .thin,
+        strokeOpacity: Double = 0.08,
+        shadowOpacity: Double = 0.015
+    ) -> some View {
+        self
+            .background(material.material, in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.primary.opacity(strokeOpacity), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(shadowOpacity), radius: 4, x: 0, y: 1)
+    }
+
+    func flowWatchGlassButtonSurface(
+        tint: Color,
+        isSelected: Bool = false,
+        cornerRadius: CGFloat = 8
+    ) -> some View {
+        self
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.thinMaterial)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(tint.opacity(isSelected ? 0.16 : 0.0))
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(isSelected ? tint.opacity(0.24) : Color.primary.opacity(0.06), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(isSelected ? 0.035 : 0.015), radius: isSelected ? 6 : 4, x: 0, y: 1)
+    }
+}
+
 struct FlowWatchSegmentedControl<Value: Hashable>: View {
     let options: [(String, Value)]
     @Binding var selection: Value
@@ -18,54 +87,54 @@ struct FlowWatchSegmentedControl<Value: Hashable>: View {
                 } label: {
                     Text(option.0)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                        .foregroundStyle(isSelected ? tint : Color.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 7)
                         .frame(minWidth: 48)
-                        .background(
-                            isSelected ? tint : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        )
+                        .flowWatchGlassButtonSurface(tint: tint, isSelected: isSelected, cornerRadius: 7)
                         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(3)
-        .background(Color(.windowBackgroundColor).opacity(0.84), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
-        )
+        .flowWatchGlassPanel(cornerRadius: 9, material: .thin)
         .animation(.easeInOut(duration: 0.16), value: selection)
     }
 }
 
-struct FlowWatchDropdownControl<Value: Hashable>: View {
+struct FlowWatchMenuControl<Value: Hashable>: View {
     let options: [(String, Value)]
     @Binding var selection: Value
     var tint: Color = .blue
-    var width: CGFloat = 190
-    var style: FlowWatchDropdownStyle = .accent
-
-    @State private var isExpanded = false
+    var width: CGFloat = 220
 
     private var selectedLabel: String {
         options.first(where: { $0.1 == selection })?.0 ?? options.first?.0 ?? ""
     }
 
     var body: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.16)) {
-                isExpanded.toggle()
+        Menu {
+            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                let isSelected = option.1 == selection
+
+                Button {
+                    selection = option.1
+                } label: {
+                    if isSelected {
+                        Label(option.0, systemImage: "checkmark")
+                    } else {
+                        Text(option.0)
+                    }
+                }
             }
         } label: {
             HStack(spacing: 8) {
                 Text(selectedLabel)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(style.controlTextColor)
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.80)
 
@@ -73,187 +142,16 @@ struct FlowWatchDropdownControl<Value: Hashable>: View {
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(style.chevronColor(tint: tint))
-                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .foregroundStyle(tint)
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
             .frame(width: width)
-            .background(style.controlBackground, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(style.controlStroke(isExpanded: isExpanded, tint: tint), lineWidth: 1)
-            )
+            .flowWatchGlassButtonSurface(tint: tint, cornerRadius: 9)
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .overlay(alignment: .topLeading) {
-            if isExpanded {
-                dropdownList
-                    .offset(y: 38)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .zIndex(isExpanded ? 20 : 0)
-    }
-
-    private var dropdownList: some View {
-        VStack(spacing: 4) {
-            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-                let isSelected = option.1 == selection
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.14)) {
-                        selection = option.1
-                        isExpanded = false
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        if style.showsCheckmark {
-                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(isSelected ? tint : Color.secondary.opacity(0.42))
-                        }
-
-                        Text(option.0)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(style.optionTextColor(isSelected: isSelected))
-                            .lineLimit(1)
-
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        style.optionBackground(isSelected: isSelected, tint: tint),
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(6)
-        .frame(width: width)
-        .background(style.menuBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(style.menuStroke, lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(style.shadowOpacity), radius: style.shadowRadius, x: 0, y: style.shadowY)
-    }
-}
-
-enum FlowWatchDropdownStyle {
-    case accent
-    case plain
-
-    var controlBackground: Color {
-        switch self {
-        case .accent:
-            return Color(.windowBackgroundColor).opacity(0.86)
-        case .plain:
-            return .white
-        }
-    }
-
-    var menuBackground: Color {
-        switch self {
-        case .accent:
-            return Color(.windowBackgroundColor).opacity(0.96)
-        case .plain:
-            return .white
-        }
-    }
-
-    var menuStroke: Color {
-        switch self {
-        case .accent:
-            return Color.secondary.opacity(0.14)
-        case .plain:
-            return Color.secondary.opacity(0.16)
-        }
-    }
-
-    var showsCheckmark: Bool {
-        switch self {
-        case .accent:
-            return true
-        case .plain:
-            return false
-        }
-    }
-
-    var controlTextColor: Color {
-        switch self {
-        case .accent:
-            return .primary
-        case .plain:
-            return .black
-        }
-    }
-
-    var shadowOpacity: Double {
-        switch self {
-        case .accent:
-            return 0.12
-        case .plain:
-            return 0.08
-        }
-    }
-
-    var shadowRadius: CGFloat {
-        switch self {
-        case .accent:
-            return 12
-        case .plain:
-            return 8
-        }
-    }
-
-    var shadowY: CGFloat {
-        switch self {
-        case .accent:
-            return 7
-        case .plain:
-            return 4
-        }
-    }
-
-    func chevronColor(tint: Color) -> Color {
-        switch self {
-        case .accent:
-            return tint
-        case .plain:
-            return .black
-        }
-    }
-
-    func controlStroke(isExpanded: Bool, tint: Color) -> Color {
-        switch self {
-        case .accent:
-            return isExpanded ? tint.opacity(0.34) : Color.secondary.opacity(0.12)
-        case .plain:
-            return Color.secondary.opacity(isExpanded ? 0.26 : 0.14)
-        }
-    }
-
-    func optionTextColor(isSelected: Bool) -> Color {
-        switch self {
-        case .accent:
-            return isSelected ? Color.primary : Color.secondary
-        case .plain:
-            return .black
-        }
-    }
-
-    func optionBackground(isSelected: Bool, tint: Color) -> Color {
-        switch self {
-        case .accent:
-            return isSelected ? tint.opacity(0.10) : Color.clear
-        case .plain:
-            return isSelected ? Color.primary.opacity(0.06) : Color.clear
-        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 }
 
@@ -267,13 +165,10 @@ struct FlowWatchActionButtonStyle: ButtonStyle {
             .foregroundStyle(isDestructive ? Color.red : tint)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                (isDestructive ? Color.red : tint).opacity(configuration.isPressed ? 0.18 : 0.10),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke((isDestructive ? Color.red : tint).opacity(0.18), lineWidth: 1)
+            .flowWatchGlassButtonSurface(
+                tint: isDestructive ? .red : tint,
+                isSelected: configuration.isPressed,
+                cornerRadius: 8
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }

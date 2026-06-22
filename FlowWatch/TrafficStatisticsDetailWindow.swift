@@ -62,7 +62,7 @@ struct TrafficStatisticsDetailView: View {
 
             detailPane
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(.regularMaterial)
         .frame(minWidth: 660, minHeight: 500)
         .onAppear {
             viewModel.reload()
@@ -96,18 +96,18 @@ struct TrafficStatisticsDetailView: View {
             HStack(spacing: 10) {
                 Image(systemName: section.systemImage)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(isSelected ? Color.white : section.tint)
+                    .foregroundStyle(section.tint)
                     .frame(width: 20)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(l10n.t(section.titleKey))
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                        .foregroundStyle(Color.primary)
                         .lineLimit(1)
 
                     Text(l10n.t(section.subtitleKey))
                         .font(.caption2)
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.78) : Color.secondary)
+                        .foregroundStyle(Color.secondary)
                         .lineLimit(1)
                 }
 
@@ -117,12 +117,8 @@ struct TrafficStatisticsDetailView: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                isSelected ? section.tint : Color.clear,
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? section.tint.opacity(0.20) : Color.secondary.opacity(0.08), lineWidth: 1)
+                isSelected ? section.tint.opacity(0.12) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
@@ -146,7 +142,7 @@ struct TrafficStatisticsDetailView: View {
             .padding(.vertical, 22)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .background(Color(.textBackgroundColor).opacity(0.24))
+        .background(.ultraThinMaterial)
     }
 
     private var detailHeader: some View {
@@ -154,8 +150,7 @@ struct TrafficStatisticsDetailView: View {
             Image(systemName: selectedSection.systemImage)
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(selectedSection.tint)
-                .frame(width: 44, height: 44)
-                .background(selectedSection.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(l10n.t(selectedSection.titleKey))
@@ -171,13 +166,11 @@ struct TrafficStatisticsDetailView: View {
             Text(l10n.t("settings.data.localOnly"))
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color(.controlBackgroundColor).opacity(0.65), in: Capsule())
-                .overlay(
-                    Capsule()
-                        .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
-                )
+        }
+        .padding(.bottom, 12)
+        .overlay(alignment: .bottom) {
+            Divider()
+                .opacity(0.45)
         }
     }
 
@@ -198,8 +191,7 @@ struct TrafficStatisticsDetailView: View {
             Image(systemName: "tray")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 36, height: 36)
-                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(l10n.t("statistics.empty.title"))
@@ -211,12 +203,11 @@ struct TrafficStatisticsDetailView: View {
 
             Spacer()
         }
-        .padding(14)
-        .background(Color(.controlBackgroundColor).opacity(0.50), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
-        )
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) {
+            Divider()
+                .opacity(0.35)
+        }
     }
 
     private var overviewSection: some View {
@@ -336,8 +327,7 @@ struct TrafficStatisticsDetailView: View {
                     Image(systemName: "person.crop.circle.badge.checkmark")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(.pink)
-                        .frame(width: 42, height: 42)
-                        .background(Color.pink.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .frame(width: 30)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(personaTitle)
@@ -349,8 +339,11 @@ struct TrafficStatisticsDetailView: View {
 
                     Spacer()
                 }
-                .padding(12)
-                .background(Color(.controlBackgroundColor).opacity(0.48), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.vertical, 8)
+                .overlay(alignment: .bottom) {
+                    Divider()
+                        .opacity(0.30)
+                }
 
                 LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
                     metricCard(
@@ -441,14 +434,12 @@ struct TrafficStatisticsDetailView: View {
                 .font(.headline)
                 .foregroundStyle(.primary)
 
+            Divider()
+                .opacity(0.35)
+
             content()
         }
-        .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
-        )
+        .padding(.vertical, 6)
     }
 
     private func metricCard(title: String, value: String, caption: String, tint: Color) -> some View {
@@ -475,13 +466,12 @@ struct TrafficStatisticsDetailView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 90, alignment: .leading)
-        .background(Color(.controlBackgroundColor).opacity(0.42), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.secondary.opacity(0.08), lineWidth: 1)
-        )
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            Divider()
+                .opacity(0.25)
+        }
     }
 
     private func detailRow(title: String, value: String, caption: String, tint: Color) -> some View {
@@ -507,9 +497,11 @@ struct TrafficStatisticsDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.80)
         }
-        .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(.controlBackgroundColor).opacity(0.36), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(alignment: .bottom) {
+            Divider()
+                .opacity(0.25)
+        }
     }
 
     private var personaTitle: String {

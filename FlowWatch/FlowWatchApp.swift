@@ -43,6 +43,7 @@ struct FlowWatchApp: App {
         case total
         case both
         case minimalSignal
+        case curveLoader
         
         var titleKey: String {
             switch self {
@@ -54,6 +55,8 @@ struct FlowWatchApp: App {
                 return "settings.displayMode.both"
             case .minimalSignal:
                 return "settings.displayMode.minimalSignal"
+            case .curveLoader:
+                return "settings.displayMode.curveLoader"
             }
         }
 
@@ -62,7 +65,8 @@ struct FlowWatchApp: App {
             case .speed: return .total
             case .total: return .both
             case .both: return .minimalSignal
-            case .minimalSignal: return .speed
+            case .minimalSignal: return .curveLoader
+            case .curveLoader: return .speed
             }
         }
     }

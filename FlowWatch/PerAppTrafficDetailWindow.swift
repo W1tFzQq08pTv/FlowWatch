@@ -265,6 +265,7 @@ struct PerAppTrafficDetailView: View {
                 .zIndex(0)
         }
         .frame(minWidth: 640, minHeight: 420)
+        .background(.regularMaterial)
         .onChange(of: dateRange) { newRange in
             if newRange != .today {
                 viewModel.loadHistoricalData(range: newRange)
@@ -295,17 +296,16 @@ struct PerAppTrafficDetailView: View {
 
             Spacer(minLength: 12)
 
-            FlowWatchDropdownControl(
+            FlowWatchMenuControl(
                 options: sortOptions,
                 selection: $sortMode,
                 tint: .blue,
-                width: 190,
-                style: .plain
+                width: 190
             )
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(.windowBackgroundColor))
+        .background(.regularMaterial)
     }
 
     private var summaryBar: some View {
@@ -329,7 +329,7 @@ struct PerAppTrafficDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color(.controlBackgroundColor).opacity(0.30))
+        .background(.thinMaterial)
     }
 
     private func summaryMetric(title: String, value: String, color: Color) -> some View {
@@ -346,11 +346,7 @@ struct PerAppTrafficDetailView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Color(.windowBackgroundColor).opacity(0.82), in: Capsule())
-        .overlay(
-            Capsule()
-                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
-        )
+        .flowWatchGlassCapsule(material: .thin)
     }
 
     @ViewBuilder
@@ -372,7 +368,7 @@ struct PerAppTrafficDetailView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.windowBackgroundColor))
+        .background(.ultraThinMaterial)
     }
 
     private var tableView: some View {
@@ -387,7 +383,7 @@ struct PerAppTrafficDetailView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(Color(.windowBackgroundColor))
+        .background(.ultraThinMaterial)
     }
 
     private var tableHeader: some View {
@@ -448,7 +444,7 @@ struct PerAppTrafficDetailView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(
-            (isAlternate ? Color(.controlBackgroundColor).opacity(0.30) : Color.clear),
+            isAlternate ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(Color.clear),
             in: RoundedRectangle(cornerRadius: 6, style: .continuous)
         )
     }
