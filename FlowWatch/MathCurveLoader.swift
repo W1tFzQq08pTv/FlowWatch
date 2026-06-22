@@ -353,77 +353,107 @@ struct MathCurveLoaderRenderer {
         size: NSSize = NSSize(width: 18, height: 18)
     ) -> NSImage? {
         let normalizedColor = color.usingColorSpace(.sRGB) ?? color
-
-        return NSImage(size: size, flipped: false) { rect in
-            let detailScale = Self.detailScale(
-                timeMilliseconds: timeMilliseconds,
-                pulseDurationMilliseconds: preset.pulseDurationMilliseconds,
-                phaseOffset: phaseOffset
-            )
-            let progress = Self.normalizedRemainder(
-                timeMilliseconds + phaseOffset * preset.durationMilliseconds,
-                dividingBy: preset.durationMilliseconds
-            ) / preset.durationMilliseconds
-            let rotation = Self.rotationDegrees(
-                preset: preset,
-                timeMilliseconds: timeMilliseconds,
-                phaseOffset: phaseOffset
-            )
-
-            let side = min(rect.width, rect.height)
-            let scale = side / 100
-            let origin = CGPoint(
-                x: rect.midX - side / 2,
-                y: rect.midY - side / 2
-            )
-
-            func mapPoint(_ point: CGPoint) -> CGPoint {
-                let rotated = Self.rotate(point, degrees: rotation)
-                return CGPoint(
-                    x: origin.x + rotated.x * scale,
-                    y: origin.y + (100 - rotated.y) * scale
-                )
-            }
-
-            let path = NSBezierPath()
-            let steps = 120
-            for index in 0...steps {
-                let point = mapPoint(preset.point(progress: Double(index) / Double(steps), detailScale: detailScale))
-                if index == 0 {
-                    path.move(to: point)
-                } else {
-                    path.line(to: point)
-                }
-            }
-            path.lineWidth = max(0.45, CGFloat(preset.strokeWidth) * scale)
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            normalizedColor.withAlphaComponent(0.10).setStroke()
-            path.stroke()
-
-            let particleRadiusScale = side / 55
-            let count = preset.particleCount
-            for index in 0..<count {
-                let tailOffset = count > 1 ? Double(index) / Double(count - 1) : 0
-                let particleProgress = normalizedProgress(progress - tailOffset * preset.trailSpan)
-                let point = mapPoint(preset.point(progress: particleProgress, detailScale: detailScale))
-                let fade = pow(1 - tailOffset, 0.56)
-                let radius = max(0.28, CGFloat(0.9 + fade * 2.7) * particleRadiusScale)
-                let alpha = CGFloat(0.04 + fade * 0.96)
-
-                normalizedColor.withAlphaComponent(alpha).setFill()
-                NSBezierPath(
-                    ovalIn: NSRect(
-                        x: point.x - radius,
-                        y: point.y - radius,
-                        width: radius * 2,
-                        height: radius * 2
-                    )
-                ).fill()
-            }
-
-            return true
+        let backingScale = NSScreen.main?.backingScaleFactor ?? 2
+        let pixelsWide = max(1, Int((size.width * backingScale).rounded(.up)))
+        let pixelsHigh = max(1, Int((size.height * backingScale).rounded(.up)))
+        guard let representation = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelsWide,
+            pixelsHigh: pixelsHigh,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bitmapFormat: [.alphaFirst],
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ), let graphicsContext = NSGraphicsContext(bitmapImageRep: representation) else {
+            return nil
         }
+        representation.size = size
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+
+        NSGraphicsContext.current = graphicsContext
+        let context = graphicsContext.cgContext
+        context.scaleBy(x: backingScale, y: backingScale)
+        context.setAllowsAntialiasing(true)
+        context.setShouldAntialias(true)
+
+        let rect = NSRect(origin: .zero, size: size)
+        let detailScale = Self.detailScale(
+            timeMilliseconds: timeMilliseconds,
+            pulseDurationMilliseconds: preset.pulseDurationMilliseconds,
+            phaseOffset: phaseOffset
+        )
+        let progress = Self.normalizedRemainder(
+            timeMilliseconds + phaseOffset * preset.durationMilliseconds,
+            dividingBy: preset.durationMilliseconds
+        ) / preset.durationMilliseconds
+        let rotation = Self.rotationDegrees(
+            preset: preset,
+            timeMilliseconds: timeMilliseconds,
+            phaseOffset: phaseOffset
+        )
+
+        let side = min(rect.width, rect.height)
+        let scale = side / 100
+        let origin = CGPoint(
+            x: rect.midX - side / 2,
+            y: rect.midY - side / 2
+        )
+        let red = normalizedColor.redComponent
+        let green = normalizedColor.greenComponent
+        let blue = normalizedColor.blueComponent
+
+        func mapPoint(_ point: CGPoint) -> CGPoint {
+            let rotated = Self.rotate(point, degrees: rotation)
+            return CGPoint(
+                x: origin.x + rotated.x * scale,
+                y: origin.y + (100 - rotated.y) * scale
+            )
+        }
+
+        let path = CGMutablePath()
+        let steps = 48
+        for index in 0...steps {
+            let point = mapPoint(preset.point(progress: Double(index) / Double(steps), detailScale: detailScale))
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+        context.addPath(path)
+        context.setLineWidth(max(0.45, CGFloat(preset.strokeWidth) * scale))
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        context.setStrokeColor(red: red, green: green, blue: blue, alpha: 0.10)
+        context.strokePath()
+
+        let particleRadiusScale = side / 55
+        let count = min(preset.particleCount, 36)
+        for index in 0..<count {
+            let tailOffset = count > 1 ? Double(index) / Double(count - 1) : 0
+            let particleProgress = normalizedProgress(progress - tailOffset * preset.trailSpan)
+            let point = mapPoint(preset.point(progress: particleProgress, detailScale: detailScale))
+            let fade = pow(1 - tailOffset, 0.56)
+            let radius = max(0.28, CGFloat(0.9 + fade * 2.7) * particleRadiusScale)
+            let alpha = CGFloat(0.04 + fade * 0.96)
+            context.setFillColor(red: red, green: green, blue: blue, alpha: alpha)
+            context.fillEllipse(in: CGRect(
+                x: point.x - radius,
+                y: point.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            ))
+        }
+
+        let image = NSImage(size: size)
+        image.addRepresentation(representation)
+        return image
     }
 
     private static func detailScale(
