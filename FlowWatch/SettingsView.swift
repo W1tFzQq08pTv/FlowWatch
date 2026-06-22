@@ -13,6 +13,8 @@ struct SettingsView: View {
     @AppStorage("statusBarSmoothTransition") private var smoothTransition: Bool = true
     @AppStorage("minimalSignalShowsTrafficTotals") private var minimalSignalShowsTrafficTotals: Bool = true
     @AppStorage("minimalSignalBlinkSpeedPercent") private var minimalSignalBlinkSpeedPercent: Double = 50
+    @AppStorage("mathCurveLoaderSelection") private var mathCurveLoaderSelectionRaw: String = MathCurveLoaderSelection.random.rawValue
+    @AppStorage("mathCurveLoaderRandomSwitchIntervalMinutes") private var mathCurveLoaderRandomSwitchIntervalMinutes: Double = 10
     @AppStorage("logging.enabled") private var loggingEnabled: Bool = true
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var selectedSection: SettingsSection? = .general
@@ -218,7 +220,7 @@ struct SettingsView: View {
                         width: 220
                     )
                 }
-                if FlowWatchApp.StatusBarDisplayMode(rawValue: statusBarDisplayModeRaw) == .minimalSignal {
+                if currentStatusBarDisplayMode == .minimalSignal || currentStatusBarDisplayMode == .curveLoader {
                     rowDivider
                     settingsRow(
                         title: l10n.t("settings.minimalSignal.showTotals"),
@@ -226,13 +228,56 @@ struct SettingsView: View {
                     ) {
                         ModernSwitch(isOn: $minimalSignalShowsTrafficTotals, tint: currentSection.tint)
                     }
+                    if currentStatusBarDisplayMode == .curveLoader {
+                        rowDivider
+                        settingsRow(
+                            title: l10n.t("settings.curveLoader.selection"),
+                            detail: l10n.t("settings.curveLoader.selection.desc")
+                        ) {
+                            FlowWatchMenuControl(
+                                options: mathCurveLoaderOptions,
+                                selection: mathCurveLoaderSelectionBinding,
+                                tint: currentSection.tint,
+                                width: 260
+                            )
+                        }
+                        if currentMathCurveLoaderSelection == .random {
+                            rowDivider
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(l10n.t("settings.curveLoader.randomSwitchInterval"))
+                                            .font(.system(size: 13, weight: .medium))
+                                        Text(l10n.t("settings.curveLoader.randomSwitchInterval.desc"))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    Spacer()
+                                    Text(String(
+                                        format: l10n.t("settings.curveLoader.randomSwitchInterval.value"),
+                                        Int(mathCurveLoaderRandomSwitchIntervalMinutesBinding.wrappedValue.rounded())
+                                    ))
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                }
+                                ModernSlider(
+                                    value: mathCurveLoaderRandomSwitchIntervalMinutesBinding,
+                                    range: 1...60,
+                                    step: 1,
+                                    tint: currentSection.tint
+                                )
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
                     rowDivider
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(l10n.t("settings.minimalSignal.blinkSpeed"))
+                                Text(l10n.t(currentStatusBarDisplayMode == .curveLoader ? "settings.curveLoader.animationSpeed" : "settings.minimalSignal.blinkSpeed"))
                                     .font(.system(size: 13, weight: .medium))
-                                Text(l10n.t("settings.minimalSignal.blinkSpeed.desc"))
+                                Text(l10n.t(currentStatusBarDisplayMode == .curveLoader ? "settings.curveLoader.animationSpeed.desc" : "settings.minimalSignal.blinkSpeed.desc"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -645,9 +690,44 @@ struct SettingsView: View {
         return Color(nsColor: NSColor(red: red, green: green, blue: blue, alpha: alpha))
     }
 
+    private var currentStatusBarDisplayMode: FlowWatchApp.StatusBarDisplayMode {
+        FlowWatchApp.StatusBarDisplayMode(rawValue: statusBarDisplayModeRaw) ?? .speed
+    }
+
     private var currentDisplayModeLabel: String {
-        let mode = FlowWatchApp.StatusBarDisplayMode(rawValue: statusBarDisplayModeRaw) ?? .speed
-        return l10n.t(mode.titleKey)
+        l10n.t(currentStatusBarDisplayMode.titleKey)
+    }
+
+    private var mathCurveLoaderOptions: [(String, String)] {
+        [(l10n.t("settings.curveLoader.random"), MathCurveLoaderSelection.random.rawValue)]
+            + MathCurveLoaderPreset.allCases.map { ($0.displayName, $0.rawValue) }
+    }
+
+    private var currentMathCurveLoaderSelection: MathCurveLoaderSelection {
+        MathCurveLoaderSelection(rawValue: mathCurveLoaderSelectionRaw) ?? .random
+    }
+
+    private var mathCurveLoaderSelectionBinding: Binding<String> {
+        Binding(
+            get: {
+                currentMathCurveLoaderSelection.rawValue
+            },
+            set: { newValue in
+                mathCurveLoaderSelectionRaw = MathCurveLoaderSelection(rawValue: newValue)?.rawValue
+                    ?? MathCurveLoaderSelection.random.rawValue
+            }
+        )
+    }
+
+    private var mathCurveLoaderRandomSwitchIntervalMinutesBinding: Binding<Double> {
+        Binding(
+            get: {
+                max(1, min(mathCurveLoaderRandomSwitchIntervalMinutes.rounded(), 60))
+            },
+            set: { newValue in
+                mathCurveLoaderRandomSwitchIntervalMinutes = max(1, min(newValue.rounded(), 60))
+            }
+        )
     }
 
     private func optionSelector<Value: Hashable>(
