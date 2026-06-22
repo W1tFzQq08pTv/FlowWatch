@@ -10,6 +10,7 @@ struct AboutView: View {
                 .resizable()
                 .frame(width: 72, height: 72)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .flowWatchGlassPanel(cornerRadius: 18, material: .thin, shadowOpacity: 0.06)
 
             VStack(spacing: 4) {
                 Text(appName)
@@ -30,6 +31,7 @@ struct AboutView: View {
         .padding(.horizontal, 28)
         .padding(.vertical, 26)
         .frame(minWidth: 340, minHeight: 250)
+        .background(.regularMaterial)
     }
 
     private var appName: String {
