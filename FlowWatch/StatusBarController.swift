@@ -13,6 +13,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private let minimalSignalBlinkSpeedPercentKey = "minimalSignalBlinkSpeedPercent"
     private let mathCurveLoaderSelectionKey = "mathCurveLoaderSelection"
     private let mathCurveLoaderRandomSwitchIntervalMinutesKey = "mathCurveLoaderRandomSwitchIntervalMinutes"
+    private let mathCurveLoaderPowerSavingEnabledKey = "mathCurveLoaderPowerSavingEnabled"
     private let monitor: NetworkUsageMonitor
     private let processMonitor: ProcessNetworkMonitor
     private let statusItem: NSStatusItem
@@ -81,6 +82,9 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private var curveLoaderNextSwitchTime: CFTimeInterval = 0
     private var curveLoaderTransitionSnapshot: CurveLoaderTransitionSnapshot?
     private var lastCurveLoaderSelectionRaw: String?
+    private var curveLoaderCurrentRedrawIntervalMilliseconds = 100
+    private var curveLoaderFrameRateCandidateIntervalMilliseconds: Int?
+    private var curveLoaderFrameRateCandidateStartedAt: CFTimeInterval = 0
     private let minimalSignalBlinkMinimumMbps: Double = 0.03
     private let minimalSignalBlinkRelaxedMaximumMbps: Double = 20
     private let minimalSignalBlinkSensitiveMaximumMbps: Double = 8
@@ -89,8 +93,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private let minimalSignalBlinkSensitiveFastestPeriod: CFTimeInterval = 0.22
     private let minimalSignalRedrawIntervalMilliseconds = 100
     private let curveLoaderRedrawIntervalMilliseconds = 100
+    private let curveLoaderLowTrafficRedrawIntervalMilliseconds = 150
+    private let curveLoaderIdleRedrawIntervalMilliseconds = 250
     private let curveLoaderTransitionRedrawIntervalMilliseconds = 67
     private let curveLoaderPresetTransitionDuration: CFTimeInterval = 0.65
+    private let curveLoaderFrameRateDowngradeDelay: CFTimeInterval = 2
+    private let curveLoaderIdleThresholdBytesPerSecond: Double = 8 * 1_024
+    private let curveLoaderLowTrafficThresholdBytesPerSecond: Double = 512 * 1_024
     private let curveLoaderImageCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
         cache.countLimit = 240
@@ -104,6 +113,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private var cachedMinimalSignalBlinkSpeedPercent: Double = 50
     private var cachedMathCurveLoaderSelection: MathCurveLoaderSelection = .random
     private var cachedCurveLoaderRandomSwitchIntervalSeconds: CFTimeInterval = 10 * 60
+    private var cachedMathCurveLoaderPowerSavingEnabled = true
 
     private var smoothTransitionEnabled: Bool {
         cachedSmoothTransitionEnabled
@@ -123,6 +133,10 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private var curveLoaderRandomSwitchIntervalSeconds: CFTimeInterval {
         cachedCurveLoaderRandomSwitchIntervalSeconds
+    }
+
+    private var mathCurveLoaderPowerSavingEnabled: Bool {
+        cachedMathCurveLoaderPowerSavingEnabled
     }
 
     private let cachedWhite = NSColor.white.usingColorSpace(.sRGB) ?? .white
@@ -206,7 +220,8 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             minimalSignalShowsTrafficTotalsKey,
             minimalSignalBlinkSpeedPercentKey,
             mathCurveLoaderSelectionKey,
-            mathCurveLoaderRandomSwitchIntervalMinutesKey
+            mathCurveLoaderRandomSwitchIntervalMinutesKey,
+            mathCurveLoaderPowerSavingEnabledKey
         ]
         for key in keys {
             defaults.addObserver(self, forKeyPath: key, options: [.new, .old], context: nil)
@@ -265,6 +280,12 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             let minutes = defaults.double(forKey: mathCurveLoaderRandomSwitchIntervalMinutesKey)
             cachedCurveLoaderRandomSwitchIntervalSeconds = max(1, min(minutes, 60)) * 60
         }
+
+        if defaults.object(forKey: mathCurveLoaderPowerSavingEnabledKey) == nil {
+            cachedMathCurveLoaderPowerSavingEnabled = true
+        } else {
+            cachedMathCurveLoaderPowerSavingEnabled = defaults.bool(forKey: mathCurveLoaderPowerSavingEnabledKey)
+        }
     }
 
     override nonisolated func observeValue(
@@ -285,7 +306,8 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             minimalSignalShowsTrafficTotalsKey,
             minimalSignalBlinkSpeedPercentKey,
             mathCurveLoaderSelectionKey,
-            mathCurveLoaderRandomSwitchIntervalMinutesKey
+            mathCurveLoaderRandomSwitchIntervalMinutesKey,
+            mathCurveLoaderPowerSavingEnabledKey
         ]
         guard watchedKeys.contains(keyPath) else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
@@ -305,6 +327,10 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             }
             if keyPath == self.mathCurveLoaderRandomSwitchIntervalMinutesKey {
                 self.curveLoaderNextSwitchTime = CACurrentMediaTime() + self.curveLoaderRandomSwitchIntervalSeconds
+            }
+            if keyPath == self.mathCurveLoaderPowerSavingEnabledKey {
+                self.resetCurveLoaderFrameRateCandidate()
+                self.lastRenderedKey = ""
             }
             self.updateStatusButtonContent()
         }
@@ -522,7 +548,8 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private func curveLoaderRenderKey(downloadBps: Double, uploadBps: Double, todayDownloaded: Double, todayUploaded: Double) -> String {
         let now = CACurrentMediaTime()
         let preset = currentCurveLoaderPreset(at: now)
-        let frame = Int((now * 1_000 / Double(currentStatusAnimationRedrawIntervalMilliseconds)).rounded(.down))
+        let intervalMilliseconds = currentStatusAnimationRedrawIntervalMilliseconds(at: now)
+        let frame = Int((now * 1_000 / Double(intervalMilliseconds)).rounded(.down))
         let color = minimalSignalColorBucket(max(downloadBps, uploadBps))
         let speedBucket = Int((curveLoaderSpeedMultiplier(forSpeedBytesPerSecond: max(downloadBps, uploadBps)) * 20).rounded())
         let showsTotals = minimalSignalShowsTrafficTotals
@@ -631,13 +658,74 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         lastRenderedKey = ""
     }
 
-    private var currentStatusAnimationRedrawIntervalMilliseconds: Int {
+    private func currentStatusAnimationRedrawIntervalMilliseconds(at now: CFTimeInterval = CACurrentMediaTime()) -> Int {
         guard displayMode == .curveLoader else {
             return minimalSignalRedrawIntervalMilliseconds
         }
-        return curveLoaderTransitionSnapshot == nil
-            ? curveLoaderRedrawIntervalMilliseconds
-            : curveLoaderTransitionRedrawIntervalMilliseconds
+        let preferredInterval = preferredCurveLoaderRedrawIntervalMilliseconds()
+        let currentInterval = statusAnimationTimerIntervalMilliseconds
+            ?? curveLoaderCurrentRedrawIntervalMilliseconds
+
+        if statusAnimationTimerIntervalMilliseconds == nil || preferredInterval <= currentInterval {
+            setCurveLoaderRedrawInterval(preferredInterval)
+            return preferredInterval
+        }
+
+        if currentInterval == curveLoaderTransitionRedrawIntervalMilliseconds,
+           preferredInterval == curveLoaderRedrawIntervalMilliseconds {
+            setCurveLoaderRedrawInterval(preferredInterval)
+            return preferredInterval
+        }
+
+        if curveLoaderFrameRateCandidateIntervalMilliseconds != preferredInterval {
+            curveLoaderFrameRateCandidateIntervalMilliseconds = preferredInterval
+            curveLoaderFrameRateCandidateStartedAt = now
+            return currentInterval
+        }
+
+        if now - curveLoaderFrameRateCandidateStartedAt >= curveLoaderFrameRateDowngradeDelay {
+            setCurveLoaderRedrawInterval(preferredInterval)
+            return preferredInterval
+        }
+
+        return currentInterval
+    }
+
+    private func preferredCurveLoaderRedrawIntervalMilliseconds() -> Int {
+        if curveLoaderTransitionSnapshot != nil {
+            return curveLoaderTransitionRedrawIntervalMilliseconds
+        }
+        guard mathCurveLoaderPowerSavingEnabled else {
+            return curveLoaderRedrawIntervalMilliseconds
+        }
+
+        let speed = curveLoaderFrameRateSpeedBytesPerSecond()
+        if speed < curveLoaderIdleThresholdBytesPerSecond {
+            return curveLoaderIdleRedrawIntervalMilliseconds
+        }
+        if speed < curveLoaderLowTrafficThresholdBytesPerSecond {
+            return curveLoaderLowTrafficRedrawIntervalMilliseconds
+        }
+        return curveLoaderRedrawIntervalMilliseconds
+    }
+
+    private func curveLoaderFrameRateSpeedBytesPerSecond() -> Double {
+        max(
+            displayedDownloadBps,
+            displayedUploadBps,
+            targetDownloadBps,
+            targetUploadBps
+        )
+    }
+
+    private func setCurveLoaderRedrawInterval(_ intervalMilliseconds: Int) {
+        curveLoaderCurrentRedrawIntervalMilliseconds = intervalMilliseconds
+        resetCurveLoaderFrameRateCandidate()
+    }
+
+    private func resetCurveLoaderFrameRateCandidate() {
+        curveLoaderFrameRateCandidateIntervalMilliseconds = nil
+        curveLoaderFrameRateCandidateStartedAt = 0
     }
 
     private func syncStatusAnimationTimer() {
@@ -645,7 +733,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             stopStatusAnimationTimer()
             return
         }
-        let intervalMilliseconds = currentStatusAnimationRedrawIntervalMilliseconds
+        let intervalMilliseconds = currentStatusAnimationRedrawIntervalMilliseconds()
         if statusAnimationTimer != nil,
            statusAnimationTimerIntervalMilliseconds == intervalMilliseconds {
             return
@@ -679,6 +767,8 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         if resetCurveState {
             curveLoaderLastFrameTime = nil
             curveLoaderTransitionSnapshot = nil
+            curveLoaderCurrentRedrawIntervalMilliseconds = curveLoaderRedrawIntervalMilliseconds
+            resetCurveLoaderFrameRateCandidate()
             curveLoaderImageCache.removeAllObjects()
         }
     }
@@ -761,7 +851,11 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         color: NSColor,
         size: NSSize
     ) -> NSImage? {
-        let quantizedTime = quantizedCurveLoaderTime(timeMilliseconds)
+        let intervalMilliseconds = currentStatusAnimationRedrawIntervalMilliseconds()
+        let quantizedTime = quantizedCurveLoaderTime(
+            timeMilliseconds,
+            intervalMilliseconds: intervalMilliseconds
+        )
         let key = curveLoaderImageCacheKey(
             preset: preset,
             timeMilliseconds: quantizedTime,
@@ -785,8 +879,11 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         return image
     }
 
-    private func quantizedCurveLoaderTime(_ timeMilliseconds: Double) -> Double {
-        let interval = Double(max(1, currentStatusAnimationRedrawIntervalMilliseconds))
+    private func quantizedCurveLoaderTime(
+        _ timeMilliseconds: Double,
+        intervalMilliseconds: Int
+    ) -> Double {
+        let interval = Double(max(1, intervalMilliseconds))
         return (timeMilliseconds / interval).rounded(.down) * interval
     }
 
@@ -802,12 +899,11 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         let green = Int((normalizedColor.greenComponent * 255).rounded())
         let blue = Int((normalizedColor.blueComponent * 255).rounded())
         let alpha = Int((normalizedColor.alphaComponent * 255).rounded())
-        let interval = Double(max(1, currentStatusAnimationRedrawIntervalMilliseconds))
-        let frame = Int((timeMilliseconds / interval).rounded(.down))
+        let time = Int(timeMilliseconds.rounded())
         let phase = Int((phaseOffset * 1_000).rounded())
         let width = Int((size.width * 100).rounded())
         let height = Int((size.height * 100).rounded())
-        return "\(preset.rawValue)|\(frame)|\(phase)|\(red),\(green),\(blue),\(alpha)|\(width)x\(height)" as NSString
+        return "\(preset.rawValue)|\(time)|\(phase)|\(red),\(green),\(blue),\(alpha)|\(width)x\(height)" as NSString
     }
 
     private func curveLoaderAnimationTime(at now: CFTimeInterval, speedBytesPerSecond: Double) -> Double {

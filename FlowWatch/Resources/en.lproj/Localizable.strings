@@ -63,6 +63,8 @@
 "settings.curveLoader.randomSwitchInterval.value" = "%d min";
 "settings.curveLoader.animationSpeed" = "Animation speed";
 "settings.curveLoader.animationSpeed.desc" = "Controls how strongly the curve particles, rotation, and pulse accelerate with the fastest current speed.";
+"settings.curveLoader.powerSaving" = "Power saving mode";
+"settings.curveLoader.powerSaving.desc" = "Automatically lowers the curve refresh rate when traffic is low or idle, then restores smoother frames when speed rises or curves switch.";
 
 "settings.maxColorRate.limitTitle" = "Coloring upper limit";
 "settings.maxColorRate.intensityTitle" = "Coloring intensity";

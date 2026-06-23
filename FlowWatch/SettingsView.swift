@@ -15,6 +15,7 @@ struct SettingsView: View {
     @AppStorage("minimalSignalBlinkSpeedPercent") private var minimalSignalBlinkSpeedPercent: Double = 50
     @AppStorage("mathCurveLoaderSelection") private var mathCurveLoaderSelectionRaw: String = MathCurveLoaderSelection.random.rawValue
     @AppStorage("mathCurveLoaderRandomSwitchIntervalMinutes") private var mathCurveLoaderRandomSwitchIntervalMinutes: Double = 10
+    @AppStorage("mathCurveLoaderPowerSavingEnabled") private var mathCurveLoaderPowerSavingEnabled: Bool = true
     @AppStorage("logging.enabled") private var loggingEnabled: Bool = true
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var selectedSection: SettingsSection? = .general
@@ -269,6 +270,13 @@ struct SettingsView: View {
                                 )
                             }
                             .padding(.vertical, 8)
+                        }
+                        rowDivider
+                        settingsRow(
+                            title: l10n.t("settings.curveLoader.powerSaving"),
+                            detail: l10n.t("settings.curveLoader.powerSaving.desc")
+                        ) {
+                            ModernSwitch(isOn: $mathCurveLoaderPowerSavingEnabled, tint: currentSection.tint)
                         }
                     }
                     rowDivider

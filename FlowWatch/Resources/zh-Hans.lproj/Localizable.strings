@@ -63,6 +63,8 @@
 "settings.curveLoader.randomSwitchInterval.value" = "%d 分钟";
 "settings.curveLoader.animationSpeed" = "动画速度";
 "settings.curveLoader.animationSpeed.desc" = "控制曲线粒子、旋转和呼吸随最高网速加速的灵敏度。";
+"settings.curveLoader.powerSaving" = "省电模式";
+"settings.curveLoader.powerSaving.desc" = "低速或静止时自动降低曲线刷新率，网速升高和切换动画时恢复顺滑帧率。";
 
 "settings.maxColorRate.limitTitle" = "上色上限";
 "settings.maxColorRate.intensityTitle" = "上色强度";
