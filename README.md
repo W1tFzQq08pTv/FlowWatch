@@ -6,7 +6,7 @@
 
 简体中文 | [English](README.en.md)
 
-> 🖥 Windows 版本：[FlowWatch-Win](https://github.com/huangxida/FlowWatch-Win)
+> 🖥 Windows 版本：[FlowWatch-Win](https://github.com/W1tFzQq08pTv/FlowWatch-Win)
 
 ## 功能
 - 菜单栏实时显示上行/下行速率
@@ -33,13 +33,13 @@
 ## 安装
 ### Homebrew
 ```bash
-brew tap huangxida/flowwatch
+brew tap w1tfzqq08ptv/flowwatch
 brew install --cask flowwatch
 ```
 
 ### 从发布页下载
 前往 GitHub Releases 下载最新的 DMG：
-[FlowWatch Releases](https://github.com/huangxida/FlowWatch/releases)
+[FlowWatch Releases](https://github.com/W1tFzQq08pTv/FlowWatch/releases)
 
 
 ## 截图

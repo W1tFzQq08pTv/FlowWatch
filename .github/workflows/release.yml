@@ -136,7 +136,7 @@ jobs:
 
       - name: Update Homebrew tap cask
         env:
-          HOMEBREW_TAP_REPO: huangxida/homebrew-flowwatch
+          HOMEBREW_TAP_REPO: W1tFzQq08pTv/homebrew-flowwatch
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
@@ -150,7 +150,7 @@ jobs:
           SHA256="$(shasum -a 256 "$RUNNER_TEMP/FlowWatch.dmg" | awk '{print $1}')"
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${HOMEBREW_TAP_REPO}.git" "$RUNNER_TEMP/homebrew-flowwatch"
           cd "$RUNNER_TEMP/homebrew-flowwatch"
-          perl -0777 -i -pe "s/version \\\"[^\\\"]+\\\"/version \\\"${VERSION}\\\"/g; s/sha256 \\\"[^\\\"]+\\\"/sha256 \\\"${SHA256}\\\"/g; s#url \\\"https://github\\.com/huangxida/FlowWatch/releases/download/v\\#\\{version\\}/FlowWatch(\\-\\#\\{version\\})?\\.dmg\\\"#url \\\"https://github.com/huangxida/FlowWatch/releases/download/v\\#\\{version\\}/FlowWatch.dmg\\\"#g;" Casks/flowwatch.rb
+          perl -0777 -i -pe "s/version \\\"[^\\\"]+\\\"/version \\\"${VERSION}\\\"/g; s/sha256 \\\"[^\\\"]+\\\"/sha256 \\\"${SHA256}\\\"/g; s#url \\\"https://github\\.com/W1tFzQq08pTv/FlowWatch/releases/download/v\\#\\{version\\}/FlowWatch(\\-\\#\\{version\\})?\\.dmg\\\"#url \\\"https://github.com/W1tFzQq08pTv/FlowWatch/releases/download/v\\#\\{version\\}/FlowWatch.dmg\\\"#g;" Casks/flowwatch.rb
           git add Casks/flowwatch.rb
           git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" commit -m "flowwatch ${VERSION}" || exit 0
           git push origin main
