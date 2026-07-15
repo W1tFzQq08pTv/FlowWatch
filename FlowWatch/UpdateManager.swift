@@ -36,8 +36,8 @@ final class UpdateManager: NSObject, ObservableObject {
     private let initialAutoCheckDelay: TimeInterval = 5
     private let homebrewFormula = "flowwatch"
     private let notificationCenter = UpdateNotificationCenter.shared
-    private static let githubReleaseAPIURL = URL(string: "https://api.github.com/repos/huangxida/FlowWatch/releases/latest")
-    private static let githubReleasePageURL = "https://github.com/huangxida/FlowWatch/releases/latest"
+    private static let githubReleaseAPIURL = URL(string: "https://api.github.com/repos/W1tFzQq08pTv/FlowWatch/releases/latest")
+    private static let githubReleasePageURL = "https://github.com/W1tFzQq08pTv/FlowWatch/releases/latest"
     private static let githubUserAgent = "FlowWatch"
     private var autoCheckTimer: Timer?
     private var cachedReleaseURL: String?
@@ -446,8 +446,8 @@ final class UpdateManager: NSObject, ObservableObject {
         guard !tag.isEmpty else {
             throw GitHubUpdateError.invalidRelease
         }
-        let htmlURL = "https://github.com/huangxida/FlowWatch/releases/tag/\(tag)"
-        let downloadURL = "https://github.com/huangxida/FlowWatch/releases/download/\(tag)/FlowWatch.dmg"
+        let htmlURL = "https://github.com/W1tFzQq08pTv/FlowWatch/releases/tag/\(tag)"
+        let downloadURL = "https://github.com/W1tFzQq08pTv/FlowWatch/releases/download/\(tag)/FlowWatch.dmg"
         let asset = GitHubAsset(name: "FlowWatch.dmg", browserDownloadURL: downloadURL)
         return GitHubRelease(tagName: tag, htmlURL: htmlURL, assets: [asset])
     }

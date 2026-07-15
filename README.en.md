@@ -6,7 +6,7 @@
 
 [简体中文](README.md) | English
 
-> 🖥 Windows version: [FlowWatch-Win](https://github.com/huangxida/FlowWatch-Win)
+> 🖥 Windows version: [FlowWatch-Win](https://github.com/W1tFzQq08pTv/FlowWatch-Win)
 
 ## Features
 - Real-time upload/download speed in the menu bar
@@ -33,13 +33,13 @@ The statistics details window keeps the main popup focused while providing a ful
 ## Install
 ### Homebrew
 ```bash
-brew tap huangxida/flowwatch
+brew tap w1tfzqq08ptv/flowwatch
 brew install --cask flowwatch
 ```
 
 ### Download from Releases
 Download the latest DMG from GitHub Releases:
-[FlowWatch Releases](https://github.com/huangxida/FlowWatch/releases)
+[FlowWatch Releases](https://github.com/W1tFzQq08pTv/FlowWatch/releases)
 
 ## Screenshots
 | Status bar: speed | Status bar: today | Status bar: speed + today |

@@ -39,7 +39,7 @@ struct AboutView: View {
     }
 
     private func openGitHub() {
-        guard let url = URL(string: "https://github.com/huangxida/FlowWatch") else { return }
+        guard let url = URL(string: "https://github.com/W1tFzQq08pTv/FlowWatch") else { return }
         NSWorkspace.shared.open(url)
     }
 }
