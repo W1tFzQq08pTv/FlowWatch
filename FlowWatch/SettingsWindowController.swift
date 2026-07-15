@@ -21,6 +21,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let window = NSWindow(contentViewController: hostingController)
         window.title = LocalizationManager.shared.t("settings.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .visible
+        window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 900, height: 600))
         window.delegate = self

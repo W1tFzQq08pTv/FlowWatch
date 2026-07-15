@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import Combine
+import SwiftUI
 
 // MARK: - Date Range
 
@@ -131,6 +131,9 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
         let window = NSWindow(contentViewController: hostingController)
         window.title = LocalizationManager.shared.t("perApp.detail.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 720, height: 520))
         window.delegate = self
@@ -265,7 +268,7 @@ struct PerAppTrafficDetailView: View {
                 .zIndex(0)
         }
         .frame(minWidth: 640, minHeight: 420)
-        .background(.regularMaterial)
+        .flowWatchWindowSurface()
         .onChange(of: dateRange) { newRange in
             if newRange != .today {
                 viewModel.loadHistoricalData(range: newRange)
@@ -281,7 +284,7 @@ struct PerAppTrafficDetailView: View {
             FlowWatchSegmentedControl(
                 options: PerAppDateRange.allCases.map { (dateRangeLabel($0), $0) },
                 selection: $dateRange,
-                tint: .blue
+                tint: FlowWatchPalette.accent
             )
 
             FlowWatchSegmentedControl(
@@ -291,7 +294,7 @@ struct PerAppTrafficDetailView: View {
                     (l10n.t("perApp.filter.processes"), .processesOnly)
                 ],
                 selection: $filterMode,
-                tint: .purple
+                tint: FlowWatchPalette.accent
             )
 
             Spacer(minLength: 12)
@@ -299,7 +302,7 @@ struct PerAppTrafficDetailView: View {
             FlowWatchMenuControl(
                 options: sortOptions,
                 selection: $sortMode,
-                tint: .blue,
+                tint: FlowWatchPalette.accent,
                 width: 190
             )
         }
@@ -313,12 +316,12 @@ struct PerAppTrafficDetailView: View {
             summaryMetric(
                 title: l10n.t("perApp.summary.totalDownload"),
                 value: formatBytes(totalDownloaded),
-                color: .blue
+                color: FlowWatchPalette.download
             )
             summaryMetric(
                 title: l10n.t("perApp.summary.totalUpload"),
                 value: formatBytes(totalUploaded),
-                color: .orange
+                color: FlowWatchPalette.upload
             )
 
             Spacer()
@@ -420,21 +423,21 @@ struct PerAppTrafficDetailView: View {
             Text(formatBytes(item.totalDownloaded))
                 .font(.system(size: 11, design: .monospaced))
                 .monospacedDigit()
-                .foregroundStyle(.blue)
+                .foregroundStyle(FlowWatchPalette.download)
                 .frame(width: downloadColumnWidth, alignment: .trailing)
 
             Text(formatBytes(item.totalUploaded))
                 .font(.system(size: 11, design: .monospaced))
                 .monospacedDigit()
-                .foregroundStyle(.orange)
+                .foregroundStyle(FlowWatchPalette.upload)
                 .frame(width: uploadColumnWidth, alignment: .trailing)
 
             if isToday {
                 VStack(alignment: .trailing, spacing: 1) {
                     Text(formatSpeed(item.downloadBps) + " ↓")
-                        .foregroundStyle(.blue.opacity(0.78))
+                        .foregroundStyle(FlowWatchPalette.download.opacity(0.78))
                     Text(formatSpeed(item.uploadBps) + " ↑")
-                        .foregroundStyle(.orange.opacity(0.78))
+                        .foregroundStyle(FlowWatchPalette.upload.opacity(0.78))
                 }
                 .font(.system(size: 10, design: .monospaced))
                 .monospacedDigit()

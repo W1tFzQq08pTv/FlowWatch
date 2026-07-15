@@ -5,9 +5,9 @@
 //  Created by xida huang on 12/5/25.
 //
 
-import SwiftUI
 import AppKit
 import Combine
+import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var monitor: NetworkUsageMonitor
@@ -36,13 +36,7 @@ struct ContentView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            LinearGradient(
-                colors: [Color.blue.opacity(0.08), Color.purple.opacity(0.05)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .flowWatchWindowSurface()
     }
 
     private var header: some View {
@@ -72,7 +66,7 @@ struct ContentView: View {
             FlowWatchSegmentedControl(
                 options: FlowWatchApp.MenuDisplayMode.allCases.map { (l10n.t($0.titleKey), $0.rawValue) },
                 selection: $displayModeRaw,
-                tint: .blue
+                tint: FlowWatchPalette.accent
             )
             Text(l10n.t("content.hint.openMenu"))
                 .font(.caption)
@@ -95,7 +89,7 @@ struct ContentView: View {
             Button(monitor.isActive ? l10n.t("content.action.pause") : l10n.t("content.action.resume")) {
                 monitor.toggle()
             }
-            .buttonStyle(FlowWatchActionButtonStyle(tint: monitor.isActive ? .orange : .green))
+            .buttonStyle(FlowWatchActionButtonStyle())
             Button(l10n.t("content.action.quitApp")) {
                 NSApplication.shared.terminate(nil)
             }
@@ -115,12 +109,7 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(Color(.controlBackgroundColor))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(color.opacity(0.2), lineWidth: 1)
-        )
-        .cornerRadius(12)
+        .flowWatchGlassPanel(cornerRadius: 12, material: .thin)
     }
 
     private func gradientColor(for bps: Double) -> Color {

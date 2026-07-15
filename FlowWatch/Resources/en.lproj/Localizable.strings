@@ -158,6 +158,8 @@
 "daily.title" = "Traffic";
 "daily.currentSpeed" = "Current Speed";
 "daily.today" = "Today";
+"daily.todayUpload" = "Today upload";
+"daily.todayDownload" = "Today download";
 "daily.chart.last7Days" = "Last 7 Days";
 "daily.section.last7days" = "Last 7 days";
 "daily.section.allHistory" = "All time";

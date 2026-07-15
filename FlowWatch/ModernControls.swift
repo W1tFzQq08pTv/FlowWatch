@@ -1,6 +1,14 @@
 import AppKit
 import SwiftUI
 
+enum FlowWatchPalette {
+    static let accent = Color.accentColor
+    static let download = Color.blue
+    static let upload = Color.orange
+    static let active = Color.green
+    static let destructive = Color.red
+}
+
 enum FlowWatchGlassMaterial {
     case ultraThin
     case thin
@@ -20,10 +28,10 @@ enum FlowWatchGlassMaterial {
 
 extension View {
     func flowWatchGlassPanel(
-        cornerRadius: CGFloat = 8,
+        cornerRadius: CGFloat = 10,
         material: FlowWatchGlassMaterial = .regular,
-        strokeOpacity: Double = 0.07,
-        shadowOpacity: Double = 0.025
+        strokeOpacity: Double = 0.09,
+        shadowOpacity: Double = 0.018
     ) -> some View {
         self
             .background(material.material, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -31,7 +39,7 @@ extension View {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(Color.primary.opacity(strokeOpacity), lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(shadowOpacity), radius: 8, x: 0, y: 2)
+            .shadow(color: Color.black.opacity(shadowOpacity), radius: 6, x: 0, y: 1)
     }
 
     func flowWatchGlassCapsule(
@@ -49,7 +57,7 @@ extension View {
     }
 
     func flowWatchGlassButtonSurface(
-        tint: Color,
+        tint: Color = FlowWatchPalette.accent,
         isSelected: Bool = false,
         cornerRadius: CGFloat = 8
     ) -> some View {
@@ -59,21 +67,43 @@ extension View {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(.thinMaterial)
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(tint.opacity(isSelected ? 0.16 : 0.0))
+                        .fill(tint.opacity(isSelected ? 0.14 : 0.0))
                 }
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(isSelected ? tint.opacity(0.24) : Color.primary.opacity(0.06), lineWidth: 1)
+                    .stroke(isSelected ? tint.opacity(0.28) : Color.primary.opacity(0.07), lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(isSelected ? 0.035 : 0.015), radius: isSelected ? 6 : 4, x: 0, y: 1)
+            .shadow(color: Color.black.opacity(isSelected ? 0.025 : 0.01), radius: isSelected ? 5 : 3, x: 0, y: 1)
+    }
+
+    func flowWatchWindowSurface() -> some View {
+        self
+            .background {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .ignoresSafeArea()
+            }
+    }
+
+    func flowWatchMainPaneSurface() -> some View {
+        self
+            .background {
+                ZStack {
+                    Rectangle()
+                        .fill(.regularMaterial)
+                    Rectangle()
+                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.72))
+                }
+                .ignoresSafeArea()
+            }
     }
 }
 
 struct FlowWatchSegmentedControl<Value: Hashable>: View {
     let options: [(String, Value)]
     @Binding var selection: Value
-    var tint: Color = .blue
+    var tint: Color = FlowWatchPalette.accent
 
     var body: some View {
         HStack(spacing: 4) {
@@ -87,7 +117,7 @@ struct FlowWatchSegmentedControl<Value: Hashable>: View {
                 } label: {
                     Text(option.0)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(isSelected ? tint : Color.primary)
+                        .foregroundStyle(Color.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
                         .padding(.horizontal, 11)
@@ -108,7 +138,7 @@ struct FlowWatchSegmentedControl<Value: Hashable>: View {
 struct FlowWatchMenuControl<Value: Hashable>: View {
     let options: [(String, Value)]
     @Binding var selection: Value
-    var tint: Color = .blue
+    var tint: Color = FlowWatchPalette.accent
     var width: CGFloat = 220
 
     private var selectedLabel: String {
@@ -142,7 +172,7 @@ struct FlowWatchMenuControl<Value: Hashable>: View {
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
@@ -156,7 +186,7 @@ struct FlowWatchMenuControl<Value: Hashable>: View {
 }
 
 struct FlowWatchActionButtonStyle: ButtonStyle {
-    var tint: Color = .blue
+    var tint: Color = FlowWatchPalette.accent
     var isDestructive = false
 
     func makeBody(configuration: Configuration) -> some View {

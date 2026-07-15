@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import ServiceManagement
+import SwiftUI
 
 struct SettingsView: View {
     @AppStorage("statusBarDisplayMode") private var statusBarDisplayModeRaw: String = FlowWatchApp.StatusBarDisplayMode.speed.rawValue
@@ -41,8 +41,9 @@ struct SettingsView: View {
                 .padding(.vertical, 24)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .background(.ultraThinMaterial)
+            .flowWatchMainPaneSurface()
         }
+        .flowWatchWindowSurface()
         .frame(minWidth: 860, minHeight: 580)
         .onAppear {
             refreshLaunchAtLoginState()
@@ -110,7 +111,7 @@ struct SettingsView: View {
             HStack(spacing: 10) {
                 Image(systemName: section.systemImage)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(section.tint)
+                    .foregroundStyle(isSelected ? FlowWatchPalette.accent : Color.secondary)
                     .frame(width: 28, height: 28)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -131,7 +132,7 @@ struct SettingsView: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                isSelected ? section.tint.opacity(0.12) : Color.clear,
+                isSelected ? FlowWatchPalette.accent.opacity(0.12) : Color.clear,
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -148,7 +149,7 @@ struct SettingsView: View {
         HStack(alignment: .center, spacing: 14) {
             Image(systemName: currentSection.systemImage)
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(currentSection.tint)
+                .foregroundStyle(FlowWatchPalette.accent)
                 .frame(width: 42, height: 42)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -599,8 +600,10 @@ struct SettingsView: View {
 
             content()
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .flowWatchGlassPanel(cornerRadius: 12, material: .thin)
     }
 
     private func settingsRow<Control: View>(
@@ -847,24 +850,7 @@ struct SettingsView: View {
         }
 
         var tint: Color {
-            switch self {
-            case .general:
-                return .blue
-            case .statusBar:
-                return .indigo
-            case .coloring:
-                return .orange
-            case .launch:
-                return .green
-            case .updates:
-                return .teal
-            case .logging:
-                return .gray
-            case .perApp:
-                return .purple
-            case .data:
-                return .red
-            }
+            FlowWatchPalette.accent
         }
     }
 
@@ -999,18 +985,22 @@ private struct ModernSwitch: View {
                     .frame(width: 46, height: 26)
                     .overlay(
                         Capsule()
-                            .fill(isOn ? tint.opacity(0.22) : Color.secondary.opacity(0.10))
+                            .fill(isOn ? tint.opacity(0.62) : Color.secondary.opacity(0.12))
                     )
 
                 Circle()
-                    .fill(.regularMaterial)
+                    .fill(Color(nsColor: .controlBackgroundColor))
                     .frame(width: 20, height: 20)
-                    .shadow(color: Color.black.opacity(isOn ? 0.10 : 0.07), radius: 3, x: 0, y: 1)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.primary.opacity(isOn ? 0.20 : 0.10), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(isOn ? 0.14 : 0.07), radius: 3, x: 0, y: 1)
                     .padding(3)
             }
             .overlay(
                 Capsule()
-                    .stroke(isOn ? tint.opacity(0.18) : Color.secondary.opacity(0.12), lineWidth: 1)
+                    .stroke(isOn ? tint.opacity(0.58) : Color.secondary.opacity(0.14), lineWidth: 1)
             )
             .opacity(isEnabled ? 1 : 0.45)
         }
@@ -1055,18 +1045,22 @@ private struct ModernSlider: View {
                 Capsule()
                     .fill(.thinMaterial)
                     .frame(height: 8)
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
 
                 Capsule()
-                    .fill(tint.opacity(0.52))
+                    .fill(tint.opacity(0.82))
                     .frame(width: width * progress, height: 8)
 
                 Circle()
-                    .fill(.regularMaterial)
+                    .fill(Color(nsColor: .controlBackgroundColor))
                     .frame(width: 18, height: 18)
-                    .shadow(color: Color.black.opacity(0.08), radius: 3, x: 0, y: 1)
+                    .shadow(color: Color.black.opacity(0.14), radius: 3, x: 0, y: 1)
                     .overlay(
                         Circle()
-                            .stroke(tint.opacity(0.24), lineWidth: 1)
+                            .stroke(Color.primary.opacity(0.20), lineWidth: 1.25)
                     )
                     .offset(x: max(0, min(width - 18, width * progress - 9)))
             }

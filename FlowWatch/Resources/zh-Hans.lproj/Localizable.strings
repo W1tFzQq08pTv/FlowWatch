@@ -158,6 +158,8 @@
 "daily.title" = "流量统计";
 "daily.currentSpeed" = "当前速率";
 "daily.today" = "今日";
+"daily.todayUpload" = "今日上传";
+"daily.todayDownload" = "今日下载";
 "daily.chart.last7Days" = "近 7 天趋势";
 "daily.section.last7days" = "近 7 天";
 "daily.section.allHistory" = "全部历史";
