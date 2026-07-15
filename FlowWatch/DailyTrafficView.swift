@@ -24,7 +24,10 @@ struct DailyTrafficView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
-            DailyTrafficMetricSummaryView(monitor: monitor)
+            DailyTrafficMetricSummaryView(
+                monitor: monitor,
+                isMenuOpen: viewModel.isMenuOpen
+            )
             DailyTrafficChartSection(
                 records: chartRecords,
                 title: l10n.t("daily.chart.last7Days"),
@@ -88,9 +91,11 @@ struct DailyTrafficView: View {
 
 private struct DailyTrafficMetricSummaryView: View {
     @ObservedObject var monitor: NetworkUsageMonitor
+    let isMenuOpen: Bool
     @StateObject private var liveDisplay = DailyTrafficLiveDisplay()
     @AppStorage("maxColorRateMbps") private var maxColorRateMbps: Double = 100
     @AppStorage("colorRatePercent") private var colorRatePercent: Double = 100
+    @AppStorage("statusBarSmoothTransition") private var smoothTransitionEnabled: Bool = true
     @EnvironmentObject private var l10n: LocalizationManager
 
     var body: some View {
@@ -101,6 +106,9 @@ private struct DailyTrafficMetricSummaryView: View {
                 systemImage: "arrow.down",
                 bytesPerSecond: displayedDownloadBps,
                 todayBytes: displayedTodayDownloaded,
+                recentSamples: visibleRecentSamples,
+                direction: .download,
+                accessibilityTrendLabel: l10n.t("daily.chart.recent5Minutes"),
                 color: FlowWatchPalette.download
             )
 
@@ -110,13 +118,25 @@ private struct DailyTrafficMetricSummaryView: View {
                 systemImage: "arrow.up",
                 bytesPerSecond: displayedUploadBps,
                 todayBytes: displayedTodayUploaded,
+                recentSamples: visibleRecentSamples,
+                direction: .upload,
+                accessibilityTrendLabel: l10n.t("daily.chart.recent5Minutes"),
                 color: FlowWatchPalette.upload
             )
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 4)
         .onAppear {
-            liveDisplay.bind(to: monitor)
+            if isMenuOpen {
+                liveDisplay.bind(to: monitor)
+            }
+        }
+        .onChange(of: isMenuOpen) { isOpen in
+            if isOpen {
+                liveDisplay.bind(to: monitor)
+            } else {
+                liveDisplay.unbind()
+            }
         }
         .onDisappear {
             liveDisplay.unbind()
@@ -129,14 +149,33 @@ private struct DailyTrafficMetricSummaryView: View {
         systemImage: String,
         bytesPerSecond: Double,
         todayBytes: Double,
+        recentSamples: [TrafficRateSample],
+        direction: RecentTrafficDirection,
+        accessibilityTrendLabel: String,
         color: Color
     ) -> some View {
         let speed = formattedSpeedParts(bytesPerSecond)
 
         return VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(color)
+            HStack(alignment: .center, spacing: 8) {
+                Label(title, systemImage: systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(color)
+                    .fixedSize()
+
+                RecentTrafficSparkline(
+                    samples: recentSamples,
+                    direction: direction,
+                    color: color,
+                    accessibilityTitle: title,
+                    accessibilityTrendLabel: accessibilityTrendLabel,
+                    smoothTransitionEnabled: smoothTransitionEnabled
+                )
+                .equatable()
+                .frame(maxWidth: .infinity)
+                .frame(height: 24)
+                .allowsHitTesting(false)
+            }
 
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(speed.value)
@@ -183,6 +222,10 @@ private struct DailyTrafficMetricSummaryView: View {
         liveDisplay.isReady ? liveDisplay.downloadBps : monitor.downloadBps
     }
 
+    private var visibleRecentSamples: [TrafficRateSample] {
+        isMenuOpen ? monitor.recentRateSamples : []
+    }
+
     private var displayedUploadBps: Double {
         liveDisplay.isReady ? liveDisplay.uploadBps : monitor.uploadBps
     }
@@ -227,6 +270,82 @@ private struct DailyTrafficMetricSummaryView: View {
     }
 }
 
+private enum RecentTrafficDirection: Equatable {
+    case download
+    case upload
+
+    func value(from sample: TrafficRateSample) -> Double {
+        switch self {
+        case .download:
+            sample.downloadBps
+        case .upload:
+            sample.uploadBps
+        }
+    }
+}
+
+private struct RecentTrafficSparkline: View, Equatable {
+    let samples: [TrafficRateSample]
+    let direction: RecentTrafficDirection
+    let color: Color
+    let accessibilityTitle: String
+    let accessibilityTrendLabel: String
+    let smoothTransitionEnabled: Bool
+
+    private var maximumValue: Double {
+        max(samples.map(direction.value(from:)).max() ?? 0, 1)
+    }
+
+    private var latestValue: Double {
+        samples.last.map(direction.value(from:)) ?? 0
+    }
+
+    var body: some View {
+        Group {
+            if #available(macOS 13.0, *), samples.count >= 2 {
+                Chart(samples) { sample in
+                    AreaMark(
+                        x: .value("Time", sample.timestamp),
+                        yStart: .value("Baseline", 0),
+                        yEnd: .value("Rate", direction.value(from: sample))
+                    )
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [color.opacity(0.22), color.opacity(0.015)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .interpolationMethod(.monotone)
+
+                    LineMark(
+                        x: .value("Time", sample.timestamp),
+                        y: .value("Rate", direction.value(from: sample))
+                    )
+                    .foregroundStyle(color)
+                    .lineStyle(StrokeStyle(lineWidth: 1.35, lineCap: .round, lineJoin: .round))
+                    .interpolationMethod(.monotone)
+                }
+                .chartLegend(.hidden)
+                .chartXAxis(.hidden)
+                .chartYAxis(.hidden)
+                .chartYScale(domain: 0...(maximumValue * 1.08))
+                .animation(
+                    smoothTransitionEnabled ? .easeOut(duration: 0.3) : nil,
+                    value: samples
+                )
+            } else {
+                Capsule()
+                    .fill(color.opacity(0.14))
+                    .frame(height: 1)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(accessibilityTitle), \(accessibilityTrendLabel)")
+        .accessibilityValue("\(ByteAxisFormatter.formatBytes(latestValue))/s")
+    }
+}
+
 private struct DailyTrafficChartSection: View, Equatable {
     let records: [DailyTrafficItem]
     let title: String
@@ -249,7 +368,7 @@ private struct DailyTrafficChartSection: View, Equatable {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
@@ -266,8 +385,8 @@ private struct DailyTrafficChartSection: View, Equatable {
                     .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
             }
         }
-        .padding(14)
-        .flowWatchGlassPanel(cornerRadius: 12, material: .thin)
+        .padding(.horizontal, 4)
+        .padding(.top, 2)
     }
 
     private var chartLegend: some View {
@@ -378,6 +497,11 @@ private struct DailyTrafficChartSection: View, Equatable {
         }
         .chartXAxis {
             AxisMarks { value in
+                AxisGridLine(
+                    stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3])
+                )
+                .foregroundStyle(Color.secondary.opacity(0.08))
+
                 if let label = value.as(String.self) {
                     AxisValueLabel(label)
                         .font(.system(size: 9, weight: label == todayLabel ? .semibold : .regular))
@@ -388,6 +512,11 @@ private struct DailyTrafficChartSection: View, Equatable {
         .chartYAxis {
             AxisMarks(position: .leading, values: axisScale.gridValues) { value in
                 let rawValue = value.as(Double.self) ?? 0
+                AxisGridLine(
+                    stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3])
+                )
+                .foregroundStyle(Color.secondary.opacity(rawValue == 0 ? 0.18 : 0.14))
+
                 if rawValue != 0 {
                     AxisValueLabel(axisScale.format(rawValue))
                         .font(.system(size: 9))
@@ -395,7 +524,7 @@ private struct DailyTrafficChartSection: View, Equatable {
                 }
             }
         }
-        .frame(minHeight: 154)
+        .frame(minHeight: 138)
     }
 
     @available(macOS 13.0, *)
@@ -772,6 +901,7 @@ private final class DailyTrafficLiveDisplay: ObservableObject {
 
 final class DailyTrafficViewModel: ObservableObject {
     @Published var records: [DailyTrafficItem] = []
+    @Published private(set) var isMenuOpen = false
 
     private var updateTimer: Timer?
     private let storage: DailyTrafficStorage
@@ -794,12 +924,14 @@ final class DailyTrafficViewModel: ObservableObject {
         let openObserver = NotificationCenter.default.addObserver(
             forName: .flowWatchMenuWillOpen, object: nil, queue: .main
         ) { [weak self] _ in
+            self?.isMenuOpen = true
             self?.loadData()
             self?.startUpdateTimer()
         }
         let closeObserver = NotificationCenter.default.addObserver(
             forName: .flowWatchMenuDidClose, object: nil, queue: .main
         ) { [weak self] _ in
+            self?.isMenuOpen = false
             self?.stopUpdateTimer()
         }
         menuObservers = [openObserver, closeObserver]

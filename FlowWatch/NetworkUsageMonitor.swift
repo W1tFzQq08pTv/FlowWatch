@@ -11,6 +11,14 @@ import Network
 import Combine
 import Darwin
 
+struct TrafficRateSample: Identifiable, Equatable {
+    let timestamp: Date
+    let downloadBps: Double
+    let uploadBps: Double
+
+    var id: Date { timestamp }
+}
+
 final class NetworkUsageMonitor: ObservableObject {
     @Published var downloadBps: Double = 0
     @Published var uploadBps: Double = 0
@@ -18,9 +26,13 @@ final class NetworkUsageMonitor: ObservableObject {
     @Published var totalUploaded: UInt64 = 0
     @Published var isActive: Bool = true
     @Published private(set) var sampleInterval: TimeInterval = 5.0
+    @Published private(set) var recentRateSamples: [TrafficRateSample] = []
 
     private let sampleIntervalKey = "statusBar.sampleInterval"
     private static let allowedIntervals: [TimeInterval] = [1, 2, 3, 5]
+    private static let recentRateWindow: TimeInterval = 5 * 60
+    private static let recentRateBucketDuration: TimeInterval = 5
+    private static let maximumRecentRateSamples = 60
 
     // 每日流量统计
     @Published private(set) var todayDownloaded: UInt64 = 0
@@ -120,8 +132,11 @@ final class NetworkUsageMonitor: ObservableObject {
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.downloadBps = Double(deltaRx) / self.sampleInterval
-            self.uploadBps = Double(deltaTx) / self.sampleInterval
+            let downloadBps = Double(deltaRx) / self.sampleInterval
+            let uploadBps = Double(deltaTx) / self.sampleInterval
+            self.downloadBps = downloadBps
+            self.uploadBps = uploadBps
+            self.appendRecentRateSample(downloadBps: downloadBps, uploadBps: uploadBps)
             self.totalDownloaded &+= deltaRx
             self.totalUploaded &+= deltaTx
             self.todayDownloaded &+= deltaRx
@@ -132,6 +147,37 @@ final class NetworkUsageMonitor: ObservableObject {
 
         self.lastRx = bytes.rx
         self.lastTx = bytes.tx
+    }
+
+    private func appendRecentRateSample(downloadBps: Double, uploadBps: Double) {
+        let now = Date()
+        let bucketTimestamp = Date(
+            timeIntervalSinceReferenceDate: floor(
+                now.timeIntervalSinceReferenceDate / Self.recentRateBucketDuration
+            ) * Self.recentRateBucketDuration
+        )
+        let sample = TrafficRateSample(
+            timestamp: bucketTimestamp,
+            downloadBps: downloadBps,
+            uploadBps: uploadBps
+        )
+        var updatedSamples = recentRateSamples
+
+        if updatedSamples.last?.timestamp == bucketTimestamp {
+            updatedSamples[updatedSamples.count - 1] = sample
+        } else {
+            updatedSamples.append(sample)
+        }
+
+        let cutoff = now.addingTimeInterval(-Self.recentRateWindow)
+        updatedSamples.removeAll { $0.timestamp < cutoff }
+
+        let overflow = updatedSamples.count - Self.maximumRecentRateSamples
+        if overflow > 0 {
+            updatedSamples.removeFirst(overflow)
+        }
+
+        recentRateSamples = updatedSamples
     }
 
     private func currentBytes() -> (rx: UInt64, tx: UInt64) {

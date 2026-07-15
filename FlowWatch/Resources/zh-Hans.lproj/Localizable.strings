@@ -166,6 +166,7 @@
 "daily.section.allHistory.days" = "%d 天";
 "daily.download" = "下载";
 "daily.upload" = "上传";
+"daily.chart.recent5Minutes" = "最近 5 分钟趋势";
 "daily.avg" = "日均 %@";
 
 "daily.fun.title" = "趣味统计";

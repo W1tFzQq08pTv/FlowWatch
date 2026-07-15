@@ -166,6 +166,7 @@
 "daily.section.allHistory.days" = "%d days";
 "daily.download" = "Download";
 "daily.upload" = "Upload";
+"daily.chart.recent5Minutes" = "recent 5-minute trend";
 "daily.avg" = "Avg %@" ;
 
 "daily.fun.title" = "Fun stats";
