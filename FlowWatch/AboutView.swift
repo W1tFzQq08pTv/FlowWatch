@@ -26,12 +26,12 @@ struct AboutView: View {
             } label: {
                 Label(l10n.t("about.github"), systemImage: "link")
             }
-            .buttonStyle(FlowWatchActionButtonStyle(tint: .blue))
+            .buttonStyle(FlowWatchActionButtonStyle())
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 26)
         .frame(minWidth: 340, minHeight: 250)
-        .background(.regularMaterial)
+        .flowWatchWindowSurface()
     }
 
     private var appName: String {

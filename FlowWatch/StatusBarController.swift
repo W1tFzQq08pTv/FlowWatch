@@ -1593,32 +1593,46 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         newMenu.addItem(.separator())
         let statisticsItem = NSMenuItem(title: LocalizationManager.shared.t("menu.statisticsDetail"), action: #selector(openStatisticsDetail), keyEquivalent: "")
         statisticsItem.target = self
+        statisticsItem.image = menuSymbol(named: "chart.bar.xaxis", accessibilityDescription: statisticsItem.title)
         newMenu.addItem(statisticsItem)
         if processMonitor.isEnabled {
             let perAppItem = NSMenuItem(title: LocalizationManager.shared.t("menu.perAppTraffic"), action: #selector(openPerAppDetail), keyEquivalent: "")
             perAppItem.target = self
+            perAppItem.image = menuSymbol(named: "chart.pie", accessibilityDescription: perAppItem.title)
             newMenu.addItem(perAppItem)
         }
         newMenu.addItem(.separator())
         let settingsItem = NSMenuItem(title: LocalizationManager.shared.t("menu.settings"), action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.keyEquivalentModifierMask = [.command]
         settingsItem.target = self
+        settingsItem.image = menuSymbol(named: "gearshape", accessibilityDescription: settingsItem.title)
         newMenu.addItem(settingsItem)
         let checkUpdateItem = NSMenuItem(title: LocalizationManager.shared.t("menu.checkUpdate"), action: #selector(checkForUpdates), keyEquivalent: "")
         checkUpdateItem.target = self
+        checkUpdateItem.image = menuSymbol(named: "arrow.up.circle", accessibilityDescription: checkUpdateItem.title)
         updateMenuItem = checkUpdateItem
         newMenu.addItem(checkUpdateItem)
         let aboutItem = NSMenuItem(title: LocalizationManager.shared.t("menu.about"), action: #selector(openAbout), keyEquivalent: "")
         aboutItem.target = self
+        aboutItem.image = menuSymbol(named: "info.circle", accessibilityDescription: aboutItem.title)
         newMenu.addItem(aboutItem)
         newMenu.addItem(.separator())
         let quitItem = NSMenuItem(title: LocalizationManager.shared.t("menu.quit"), action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
+        quitItem.image = menuSymbol(named: "power", accessibilityDescription: quitItem.title)
         newMenu.addItem(quitItem)
         menu = newMenu
         menu.delegate = self
         statusItem.menu = menu
         refreshUpdateMenuItem()
+    }
+
+    private func menuSymbol(named name: String, accessibilityDescription: String) -> NSImage? {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: accessibilityDescription)?
+            .withSymbolConfiguration(configuration)
+        image?.isTemplate = true
+        return image
     }
 
     // MARK: - NSMenuDelegate

@@ -5,12 +5,12 @@
 //  每日流量统计视图
 //
 
-import SwiftUI
 import AppKit
 import Charts
 import Combine
 import Foundation
 import QuartzCore
+import SwiftUI
 
 struct DailyTrafficView: View {
     @ObservedObject private var monitor: NetworkUsageMonitor
@@ -22,7 +22,7 @@ struct DailyTrafficView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             header
             DailyTrafficMetricSummaryView(monitor: monitor)
             DailyTrafficChartSection(
@@ -36,9 +36,9 @@ struct DailyTrafficView: View {
             )
             .equatable()
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 18)
+        .padding(.top, 12)
+        .padding(.bottom, 14)
         .frame(width: 384)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -47,7 +47,7 @@ struct DailyTrafficView: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(l10n.t("daily.title"))
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
             }
 
             Spacer()
@@ -60,13 +60,9 @@ struct DailyTrafficView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color(.controlBackgroundColor).opacity(0.45), in: Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(Color.secondary.opacity(0.08), lineWidth: 1)
-            )
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .flowWatchGlassCapsule(material: .thin)
         }
     }
 
@@ -98,41 +94,27 @@ private struct DailyTrafficMetricSummaryView: View {
     @EnvironmentObject private var l10n: LocalizationManager
 
     var body: some View {
-        HStack(spacing: 10) {
-            metricCard(
-                title: l10n.t("daily.currentSpeed"),
-                systemImage: "speedometer"
-            ) {
-                trafficMetricRow(
-                    title: l10n.t("daily.upload"),
-                    value: monitor.formattedSpeed(displayedUploadBps),
-                    color: .orange,
-                    valueColor: speedValueColor(for: displayedUploadBps)
-                )
-                trafficMetricRow(
-                    title: l10n.t("daily.download"),
-                    value: monitor.formattedSpeed(displayedDownloadBps),
-                    color: .blue,
-                    valueColor: speedValueColor(for: displayedDownloadBps)
-                )
-            }
+        HStack(alignment: .top, spacing: 16) {
+            speedMetric(
+                title: l10n.t("daily.download"),
+                todayTitle: l10n.t("daily.todayDownload"),
+                systemImage: "arrow.down",
+                bytesPerSecond: displayedDownloadBps,
+                todayBytes: displayedTodayDownloaded,
+                color: FlowWatchPalette.download
+            )
 
-            metricCard(
-                title: l10n.t("daily.today"),
-                systemImage: "calendar"
-            ) {
-                trafficMetricRow(
-                    title: l10n.t("daily.upload"),
-                    value: ByteAxisFormatter.formatBytes(displayedTodayUploaded),
-                    color: .orange
-                )
-                trafficMetricRow(
-                    title: l10n.t("daily.download"),
-                    value: ByteAxisFormatter.formatBytes(displayedTodayDownloaded),
-                    color: .blue
-                )
-            }
+            speedMetric(
+                title: l10n.t("daily.upload"),
+                todayTitle: l10n.t("daily.todayUpload"),
+                systemImage: "arrow.up",
+                bytesPerSecond: displayedUploadBps,
+                todayBytes: displayedTodayUploaded,
+                color: FlowWatchPalette.upload
+            )
         }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 4)
         .onAppear {
             liveDisplay.bind(to: monitor)
         }
@@ -141,50 +123,60 @@ private struct DailyTrafficMetricSummaryView: View {
         }
     }
 
-    private func metricCard<Content: View>(
+    private func speedMetric(
         title: String,
+        todayTitle: String,
         systemImage: String,
-        @ViewBuilder content: () -> Content
+        bytesPerSecond: Double,
+        todayBytes: Double,
+        color: Color
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+        let speed = formattedSpeedParts(bytesPerSecond)
 
-            VStack(alignment: .leading, spacing: 7) {
-                content()
+        return VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(color)
+
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(speed.value)
+                    .font(.system(size: 28, weight: .semibold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(speedValueColor(for: bytesPerSecond))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                Text(speed.unit)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(todayTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Text(ByteAxisFormatter.formatBytes(todayBytes))
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
             }
         }
-        .padding(11)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(Color(.controlBackgroundColor).opacity(0.62), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func trafficMetricRow(
-        title: String,
-        value: String,
-        color: Color,
-        valueColor: Color = .primary
-    ) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
-            Circle()
-                .fill(color)
-                .frame(width: 6, height: 6)
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 4)
-            Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .monospacedDigit()
-                .foregroundStyle(valueColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
+    private func formattedSpeedParts(_ bytesPerSecond: Double) -> (value: String, unit: String) {
+        let formatted = monitor.formattedSpeed(bytesPerSecond)
+        guard let separator = formatted.lastIndex(of: " ") else {
+            return (formatted, "")
         }
+
+        return (
+            String(formatted[..<separator]),
+            String(formatted[formatted.index(after: separator)...])
+        )
     }
 
     private var displayedDownloadBps: Double {
@@ -257,7 +249,7 @@ private struct DailyTrafficChartSection: View, Equatable {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
@@ -274,18 +266,14 @@ private struct DailyTrafficChartSection: View, Equatable {
                     .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
             }
         }
-        .padding(12)
-        .background(Color(.controlBackgroundColor).opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.secondary.opacity(0.08), lineWidth: 1)
-        )
+        .padding(14)
+        .flowWatchGlassPanel(cornerRadius: 12, material: .thin)
     }
 
     private var chartLegend: some View {
         HStack(spacing: 10) {
-            legendItem(title: downloadLabel, color: .blue)
-            legendItem(title: uploadLabel, color: .orange)
+            legendItem(title: downloadLabel, color: FlowWatchPalette.download)
+            legendItem(title: uploadLabel, color: FlowWatchPalette.upload)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -293,9 +281,9 @@ private struct DailyTrafficChartSection: View, Equatable {
 
     private func legendItem(title: String, color: Color) -> some View {
         HStack(spacing: 5) {
-            Circle()
+            Capsule()
                 .fill(color)
-                .frame(width: 7, height: 7)
+                .frame(width: 13, height: 3)
             Text(title)
         }
     }
@@ -329,11 +317,11 @@ private struct DailyTrafficChartSection: View, Equatable {
                     y: .value(downloadLabel, record.downloadMB),
                     series: .value(typeLabel, downloadLabel)
                 )
-                .foregroundStyle(.blue)
-                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(FlowWatchPalette.download)
+                .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.monotone)
                 .symbol(Circle())
-                .symbolSize(24)
+                .symbolSize(20)
             }
 
             ForEach(records) { record in
@@ -342,11 +330,11 @@ private struct DailyTrafficChartSection: View, Equatable {
                     y: .value(uploadLabel, record.uploadMB),
                     series: .value(typeLabel, uploadLabel)
                 )
-                .foregroundStyle(.orange)
-                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(FlowWatchPalette.upload)
+                .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.monotone)
                 .symbol(Circle())
-                .symbolSize(24)
+                .symbolSize(20)
             }
 
             if let selectedRecord = selectedChartRecord {
@@ -354,14 +342,14 @@ private struct DailyTrafficChartSection: View, Equatable {
                     x: .value(dateLabel, selectedRecord.dayLabel),
                     y: .value(downloadLabel, selectedRecord.downloadMB)
                 )
-                .foregroundStyle(.blue)
+                .foregroundStyle(FlowWatchPalette.download)
                 .symbolSize(72)
 
                 PointMark(
                     x: .value(dateLabel, selectedRecord.dayLabel),
                     y: .value(uploadLabel, selectedRecord.uploadMB)
                 )
-                .foregroundStyle(.orange)
+                .foregroundStyle(FlowWatchPalette.upload)
                 .symbolSize(72)
             }
         }
@@ -395,17 +383,11 @@ private struct DailyTrafficChartSection: View, Equatable {
                         .font(.system(size: 9, weight: label == todayLabel ? .semibold : .regular))
                         .foregroundStyle(Color.secondary.opacity(0.82))
                 }
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
-                    .foregroundStyle(Color.secondary.opacity(0.18))
-                AxisTick(stroke: StrokeStyle(lineWidth: 0.5))
-                    .foregroundStyle(Color.secondary.opacity(0.18))
             }
         }
         .chartYAxis {
             AxisMarks(position: .leading, values: axisScale.gridValues) { value in
                 let rawValue = value.as(Double.self) ?? 0
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
-                    .foregroundStyle(Color.secondary.opacity(0.22))
                 if rawValue != 0 {
                     AxisValueLabel(axisScale.format(rawValue))
                         .font(.system(size: 9))
@@ -413,7 +395,7 @@ private struct DailyTrafficChartSection: View, Equatable {
                 }
             }
         }
-        .frame(minHeight: 170)
+        .frame(minHeight: 154)
     }
 
     @available(macOS 13.0, *)
@@ -448,16 +430,12 @@ private struct DailyTrafficChartSection: View, Equatable {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            tooltipMetric(title: downloadLabel, value: ByteAxisFormatter.formatMB(record.downloadMB), color: .blue)
-            tooltipMetric(title: uploadLabel, value: ByteAxisFormatter.formatMB(record.uploadMB), color: .orange)
+            tooltipMetric(title: downloadLabel, value: ByteAxisFormatter.formatMB(record.downloadMB), color: FlowWatchPalette.download)
+            tooltipMetric(title: uploadLabel, value: ByteAxisFormatter.formatMB(record.uploadMB), color: FlowWatchPalette.upload)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
-        .background(Color(.windowBackgroundColor).opacity(0.94), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
-        )
+        .flowWatchGlassPanel(cornerRadius: 8, material: .regular, strokeOpacity: 0.14)
     }
 
     private func tooltipMetric(title: String, value: String, color: Color) -> some View {

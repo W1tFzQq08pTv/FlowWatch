@@ -21,6 +21,9 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
         let window = NSWindow(contentViewController: hostingController)
         window.title = LocalizationManager.shared.t("menu.about")
         window.styleMask = [.titled, .closable, .miniaturizable]
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 360, height: 280))
         window.delegate = self
