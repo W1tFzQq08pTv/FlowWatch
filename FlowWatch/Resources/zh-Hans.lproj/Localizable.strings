@@ -2,7 +2,7 @@
 "settings.subtitle" = "状态栏显示、上色与启动选项";
 "settings.subtitle.general" = "语言与基础偏好";
 "settings.subtitle.statusBar" = "状态栏内容、采样和数字过渡";
-"settings.subtitle.coloring" = "速率颜色阈值和强度";
+"settings.subtitle.coloring" = "状态栏上色开关、速率阈值和强度";
 "settings.subtitle.launch" = "登录后自动启动";
 "settings.subtitle.updates" = "自动检查和版本状态";
 "settings.subtitle.logging" = "本地日志开关与位置";
@@ -50,23 +50,25 @@
 "settings.displayMode.total" = "今日累计";
 "settings.displayMode.both" = "都显示";
 "settings.displayMode.minimalSignal" = "极简信号";
-"settings.displayMode.curveLoader" = "曲线动画";
+"settings.displayMode.curveLoader" = "动态图形";
 "settings.minimalSignal.showTotals" = "显示上下行统计";
 "settings.minimalSignal.showTotals.desc" = "在极简信号旁显示今日上传和下载累计流量。";
 "settings.minimalSignal.blinkSpeed" = "闪烁速度";
 "settings.minimalSignal.blinkSpeed.desc" = "控制极简信号灯随上下行速率闪烁的快慢。";
-"settings.curveLoader.selection" = "曲线样式";
-"settings.curveLoader.selection.desc" = "选择固定曲线，或让 FlowWatch 按设置的间隔自动随机切换。";
-"settings.curveLoader.random" = "全部随机";
+"settings.curveLoader.selection" = "动态图形";
+"settings.curveLoader.selection.desc" = "选择固定图形；随机模式仅在 Thinking Orbs 图形间切换，原曲线仍可手动选择。";
+"settings.curveLoader.random" = "随机 Orbs";
 "settings.curveLoader.randomSwitchInterval" = "自动更换间隔";
-"settings.curveLoader.randomSwitchInterval.desc" = "选择全部随机时，每隔这个时长切换到下一种曲线动画。";
+"settings.curveLoader.randomSwitchInterval.desc" = "选择随机 Orbs 时，每隔这个时长切换到下一种点阵球体动画。";
 "settings.curveLoader.randomSwitchInterval.value" = "%d 分钟";
 "settings.curveLoader.animationSpeed" = "动画速度";
-"settings.curveLoader.animationSpeed.desc" = "控制曲线粒子、旋转和呼吸随最高网速加速的灵敏度。";
+"settings.curveLoader.animationSpeed.desc" = "控制点阵、曲线、旋转与变形随最高网速加速的灵敏度。";
 
 "settings.maxColorRate.limitTitle" = "上色上限";
 "settings.maxColorRate.intensityTitle" = "上色强度";
 "settings.maxColorRate.desc" = "上限决定颜色变化的速度阈值，强度用于按比例缩放上色范围。";
+"settings.coloring.toggle" = "启用流量色彩";
+"settings.coloring.toggle.desc" = "关闭后，状态栏文字和极简信号不再随网速变色；动态图形使用保留明暗与透明度层次的单色灰阶。";
 
 "settings.launchAtLogin.toggle" = "开机自动启动";
 "settings.update.autoCheck" = "自动检测更新";
