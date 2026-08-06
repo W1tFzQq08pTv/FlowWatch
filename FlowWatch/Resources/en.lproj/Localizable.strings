@@ -56,10 +56,10 @@
 "settings.minimalSignal.blinkSpeed" = "Blink speed";
 "settings.minimalSignal.blinkSpeed.desc" = "Controls how quickly the minimal signal blinks with upload and download speed.";
 "settings.curveLoader.selection" = "Animated graphic";
-"settings.curveLoader.selection.desc" = "Choose a fixed graphic. Random mode uses Thinking Orbs only; legacy curves remain available manually.";
-"settings.curveLoader.random" = "Random Orbs";
+"settings.curveLoader.selection.desc" = "Choose a fixed graphic, or randomly cycle through all graphics.";
+"settings.curveLoader.random" = "Random All";
 "settings.curveLoader.randomSwitchInterval" = "Auto-switch interval";
-"settings.curveLoader.randomSwitchInterval.desc" = "When Random Orbs is selected, switch to the next dotted orb after this interval.";
+"settings.curveLoader.randomSwitchInterval.desc" = "When Random All is selected, switch to the next graphic after this interval.";
 "settings.curveLoader.randomSwitchInterval.value" = "%d min";
 "settings.curveLoader.animationSpeed" = "Animation speed";
 "settings.curveLoader.animationSpeed.desc" = "Controls how strongly dots, curves, rotation, and morphing accelerate with the fastest current speed.";

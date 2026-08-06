@@ -50,7 +50,7 @@ enum DynamicGraphicPreset: RawRepresentable, Hashable, CaseIterable, Identifiabl
     }
 
     static var randomCases: [DynamicGraphicPreset] {
-        ThinkingOrbState.allCases.map(DynamicGraphicPreset.thinkingOrb)
+        allCases
     }
 
     init?(rawValue: String) {

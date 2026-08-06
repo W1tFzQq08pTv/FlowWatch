@@ -56,10 +56,10 @@
 "settings.minimalSignal.blinkSpeed" = "闪烁速度";
 "settings.minimalSignal.blinkSpeed.desc" = "控制极简信号灯随上下行速率闪烁的快慢。";
 "settings.curveLoader.selection" = "动态图形";
-"settings.curveLoader.selection.desc" = "选择固定图形；随机模式仅在 Thinking Orbs 图形间切换，原曲线仍可手动选择。";
-"settings.curveLoader.random" = "随机 Orbs";
+"settings.curveLoader.selection.desc" = "选择固定图形，或在所有图形间随机切换。";
+"settings.curveLoader.random" = "全部随机";
 "settings.curveLoader.randomSwitchInterval" = "自动更换间隔";
-"settings.curveLoader.randomSwitchInterval.desc" = "选择随机 Orbs 时，每隔这个时长切换到下一种点阵球体动画。";
+"settings.curveLoader.randomSwitchInterval.desc" = "选择全部随机时，每隔这个时长切换到下一种图形。";
 "settings.curveLoader.randomSwitchInterval.value" = "%d 分钟";
 "settings.curveLoader.animationSpeed" = "动画速度";
 "settings.curveLoader.animationSpeed.desc" = "控制点阵、曲线、旋转与变形随最高网速加速的灵敏度。";
