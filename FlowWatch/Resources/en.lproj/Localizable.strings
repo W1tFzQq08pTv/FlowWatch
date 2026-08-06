@@ -2,7 +2,7 @@
 "settings.subtitle" = "Menu bar display, coloring, and launch options";
 "settings.subtitle.general" = "Language and basic preferences";
 "settings.subtitle.statusBar" = "Menu bar content, sampling, and number transitions";
-"settings.subtitle.coloring" = "Speed color thresholds and intensity";
+"settings.subtitle.coloring" = "Menu bar coloring toggle, speed thresholds, and intensity";
 "settings.subtitle.launch" = "Start automatically after login";
 "settings.subtitle.updates" = "Automatic checks and version status";
 "settings.subtitle.logging" = "Local logging and log location";
@@ -50,23 +50,25 @@
 "settings.displayMode.total" = "Today Total";
 "settings.displayMode.both" = "Both";
 "settings.displayMode.minimalSignal" = "Minimal Signal";
-"settings.displayMode.curveLoader" = "Curve Loader";
+"settings.displayMode.curveLoader" = "Animated Graphic";
 "settings.minimalSignal.showTotals" = "Show up/down totals";
 "settings.minimalSignal.showTotals.desc" = "Show today's upload and download totals next to the minimal signal.";
 "settings.minimalSignal.blinkSpeed" = "Blink speed";
 "settings.minimalSignal.blinkSpeed.desc" = "Controls how quickly the minimal signal blinks with upload and download speed.";
-"settings.curveLoader.selection" = "Curve style";
-"settings.curveLoader.selection.desc" = "Choose one curve, or let FlowWatch switch randomly at the configured interval.";
-"settings.curveLoader.random" = "Random all";
+"settings.curveLoader.selection" = "Animated graphic";
+"settings.curveLoader.selection.desc" = "Choose a fixed graphic, or randomly cycle through all graphics.";
+"settings.curveLoader.random" = "Random All";
 "settings.curveLoader.randomSwitchInterval" = "Auto-switch interval";
-"settings.curveLoader.randomSwitchInterval.desc" = "When Random all is selected, switch to the next curve after this interval.";
+"settings.curveLoader.randomSwitchInterval.desc" = "When Random All is selected, switch to the next graphic after this interval.";
 "settings.curveLoader.randomSwitchInterval.value" = "%d min";
 "settings.curveLoader.animationSpeed" = "Animation speed";
-"settings.curveLoader.animationSpeed.desc" = "Controls how strongly the curve particles, rotation, and pulse accelerate with the fastest current speed.";
+"settings.curveLoader.animationSpeed.desc" = "Controls how strongly dots, curves, rotation, and morphing accelerate with the fastest current speed.";
 
 "settings.maxColorRate.limitTitle" = "Coloring upper limit";
 "settings.maxColorRate.intensityTitle" = "Coloring intensity";
 "settings.maxColorRate.desc" = "The upper limit sets the speed threshold; intensity scales the coloring range.";
+"settings.coloring.toggle" = "Enable traffic-based colors";
+"settings.coloring.toggle.desc" = "When disabled, menu bar text and minimal signals no longer change color with network speed; animated graphics use monochrome shading that preserves brightness and transparency depth.";
 
 "settings.launchAtLogin.toggle" = "Launch at login";
 "settings.update.autoCheck" = "Automatically check for updates";

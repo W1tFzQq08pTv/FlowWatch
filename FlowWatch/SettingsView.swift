@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage("statusBarDisplayMode") private var statusBarDisplayModeRaw: String = FlowWatchApp.StatusBarDisplayMode.speed.rawValue
     @AppStorage("maxColorRateMbps") private var maxColorRateMbps: Double = 100
     @AppStorage("colorRatePercent") private var colorRatePercent: Double = 100
+    @AppStorage("statusBarColoringEnabled") private var statusBarColoringEnabled: Bool = true
     @AppStorage("update.autoCheckEnabled") private var autoCheckEnabled: Bool = true
     @AppStorage("perAppMonitoring.enabled") private var perAppMonitoringEnabled: Bool = false
     @AppStorage("perAppMonitoring.sampleInterval") private var perAppSampleInterval: Double = 3.0
@@ -181,7 +182,13 @@ struct SettingsView: View {
         case .statusBar:
             statusBadge(title: l10n.t("settings.statusBar.interval"), value: String(format: l10n.t("settings.statusBar.interval.value"), Int(sampleInterval)), tint: currentSection.tint)
         case .coloring:
-            statusBadge(title: l10n.t("settings.maxColorRate.intensityTitle"), value: "\(Int(colorRatePercent.rounded()))%", tint: currentSection.tint)
+            statusBadge(
+                title: l10n.t("settings.coloring.toggle"),
+                value: statusBarColoringEnabled
+                    ? "\(Int(colorRatePercent.rounded()))%"
+                    : l10n.t("settings.state.off"),
+                tint: currentSection.tint
+            )
         case .launch:
             statusBadge(title: l10n.t("settings.launchAtLogin.toggle"), value: launchAtLoginEnabled ? l10n.t("settings.state.on") : l10n.t("settings.state.off"), tint: currentSection.tint)
         case .updates:
@@ -308,6 +315,13 @@ struct SettingsView: View {
         case .coloring:
             settingsPanel(title: l10n.t("settings.group.colorRules"), systemImage: "paintpalette") {
                 settingsRow(
+                    title: l10n.t("settings.coloring.toggle"),
+                    detail: l10n.t("settings.coloring.toggle.desc")
+                ) {
+                    ModernSwitch(isOn: statusBarColoringEnabledBinding, tint: currentSection.tint)
+                }
+                rowDivider
+                settingsRow(
                     title: l10n.t("settings.maxColorRate.limitTitle"),
                     detail: l10n.t("settings.maxColorRate.desc")
                 ) {
@@ -333,6 +347,8 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .disabled(!statusBarColoringEnabled)
+                .opacity(statusBarColoringEnabled ? 1 : 0.5)
                 rowDivider
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -346,6 +362,8 @@ struct SettingsView: View {
                     colorPreviewStrip
                 }
                 .padding(.vertical, 8)
+                .disabled(!statusBarColoringEnabled)
+                .opacity(statusBarColoringEnabled ? 1 : 0.5)
             }
         case .launch:
             settingsPanel(title: l10n.t("settings.group.login"), systemImage: "power") {
@@ -667,6 +685,9 @@ struct SettingsView: View {
     }
 
     private func previewSpeedColor(mbps: Double) -> Color {
+        guard statusBarColoringEnabled else {
+            return .primary
+        }
         let percent = max(0, min(colorRatePercent, 100))
         let maxRate = max(0, maxColorRateMbps) * percent / 100
         guard maxRate > 0 else {
@@ -703,7 +724,7 @@ struct SettingsView: View {
 
     private var mathCurveLoaderOptions: [(String, String)] {
         [(l10n.t("settings.curveLoader.random"), MathCurveLoaderSelection.random.rawValue)]
-            + MathCurveLoaderPreset.allCases.map { ($0.displayName, $0.rawValue) }
+            + DynamicGraphicPreset.allCases.map { ($0.displayName, $0.rawValue) }
     }
 
     private var currentMathCurveLoaderSelection: MathCurveLoaderSelection {
@@ -868,6 +889,17 @@ struct SettingsView: View {
             get: { min(max(colorRatePercent, 0), 100) },
             set: { newValue in
                 colorRatePercent = max(0, min(newValue, 100))
+            }
+        )
+    }
+
+    private var statusBarColoringEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { statusBarColoringEnabled },
+            set: { newValue in
+                statusBarColoringEnabled = newValue
+                UserDefaults.standard.set(newValue, forKey: "statusBarColoringEnabled")
+                NotificationCenter.default.post(name: .flowWatchStatusBarColoringChanged, object: nil)
             }
         )
     }

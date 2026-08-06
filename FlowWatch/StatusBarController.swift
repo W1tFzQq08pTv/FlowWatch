@@ -8,6 +8,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private let displayModeKey = "statusBarDisplayMode"
     private let maxColorRateKey = "maxColorRateMbps"
     private let colorRatePercentKey = "colorRatePercent"
+    private let coloringEnabledKey = "statusBarColoringEnabled"
     private let smoothTransitionKey = "statusBarSmoothTransition"
     private let minimalSignalShowsTrafficTotalsKey = "minimalSignalShowsTrafficTotals"
     private let minimalSignalBlinkSpeedPercentKey = "minimalSignalBlinkSpeedPercent"
@@ -67,13 +68,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private var uploadBlinkPeriod: CFTimeInterval?
 
     private struct CurveLoaderTransitionSnapshot {
-        let preset: MathCurveLoaderPreset
+        let preset: DynamicGraphicPreset
         let animationTimeMilliseconds: Double
         let phaseOffset: Double
         let startedAt: CFTimeInterval
     }
 
-    private var activeCurveLoaderPreset: MathCurveLoaderPreset?
+    private var activeCurveLoaderPreset: DynamicGraphicPreset?
     private var curveLoaderAnimationTimeMilliseconds: Double = 0
     private var curveLoaderLastFrameTime: CFTimeInterval?
     private var curveLoaderPhaseOffset: Double = Double.random(in: 0...1)
@@ -99,6 +100,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     private var cachedDisplayMode: FlowWatchApp.StatusBarDisplayMode = .speed
     private var cachedMaxColorRateMbps: Double = 100
     private var cachedColorRatePercent: Double = 100
+    private var cachedColoringEnabled = true
     private var cachedSmoothTransitionEnabled = true
     private var cachedMinimalSignalShowsTrafficTotals = true
     private var cachedMinimalSignalBlinkSpeedPercent: Double = 50
@@ -123,6 +125,10 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private var curveLoaderRandomSwitchIntervalSeconds: CFTimeInterval {
         cachedCurveLoaderRandomSwitchIntervalSeconds
+    }
+
+    private var isColoringEnabled: Bool {
+        cachedColoringEnabled
     }
 
     private let cachedWhite = NSColor.white.usingColorSpace(.sRGB) ?? .white
@@ -202,6 +208,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             displayModeKey,
             maxColorRateKey,
             colorRatePercentKey,
+            coloringEnabledKey,
             smoothTransitionKey,
             minimalSignalShowsTrafficTotalsKey,
             minimalSignalBlinkSpeedPercentKey,
@@ -229,6 +236,12 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             cachedColorRatePercent = 100
         } else {
             cachedColorRatePercent = max(0, min(defaults.double(forKey: colorRatePercentKey), 100))
+        }
+
+        if defaults.object(forKey: coloringEnabledKey) == nil {
+            cachedColoringEnabled = true
+        } else {
+            cachedColoringEnabled = defaults.bool(forKey: coloringEnabledKey)
         }
 
         if defaults.object(forKey: smoothTransitionKey) == nil {
@@ -281,6 +294,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             displayModeKey,
             maxColorRateKey,
             colorRatePercentKey,
+            coloringEnabledKey,
             smoothTransitionKey,
             minimalSignalShowsTrafficTotalsKey,
             minimalSignalBlinkSpeedPercentKey,
@@ -298,6 +312,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
                 self.displayModeKey,
                 self.maxColorRateKey,
                 self.colorRatePercentKey,
+                self.coloringEnabledKey,
                 self.mathCurveLoaderSelectionKey
             ].contains(keyPath) {
                 self.curveLoaderImageCache.removeAllObjects()
@@ -365,6 +380,17 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
                 guard let self else { return }
                 let interval = UserDefaults.standard.double(forKey: "statusBar.sampleInterval")
                 self.monitor.updateInterval(to: interval)
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .flowWatchStatusBarColoringChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.refreshCachedPreferences()
+                self.curveLoaderImageCache.removeAllObjects()
+                self.lastRenderedKey = ""
+                self.updateStatusButtonContent()
             }
             .store(in: &cancellables)
     }
@@ -452,6 +478,9 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func colorForSpeed(_ bytesPerSecond: Double) -> NSColor {
+        guard isColoringEnabled else {
+            return cachedWhite
+        }
         let mbps = max(0, bytesPerSecond) * 8 / 1_000_000
         let percent = max(0, min(colorRatePercent, 100))
         let maxRate = max(0, maxColorRateMbps) * percent / 100
@@ -479,6 +508,9 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func colorForMinimalSignalSpeed(_ bytesPerSecond: Double) -> NSColor {
+        guard isColoringEnabled else {
+            return cachedWhite
+        }
         let ratio = speedColorRatio(bytesPerSecond)
         if ratio < 0.5 {
             return interpolateColor(from: cachedGreen, to: cachedYellow, t: ratio / 0.5)
@@ -578,7 +610,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         return 0.45 + emphasizedRatio * 2.55
     }
 
-    private func currentCurveLoaderPreset(at now: CFTimeInterval) -> MathCurveLoaderPreset {
+    private func currentCurveLoaderPreset(at now: CFTimeInterval) -> DynamicGraphicPreset {
         let selection = mathCurveLoaderSelection
         let selectionRaw = selection.rawValue
         if selectionRaw != lastCurveLoaderSelectionRaw {
@@ -599,20 +631,20 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
                 setActiveCurveLoaderPreset(nextPreset, at: now)
                 curveLoaderNextSwitchTime = now + curveLoaderRandomSwitchIntervalSeconds
             }
-            return activeCurveLoaderPreset ?? .originalThinking
+            return activeCurveLoaderPreset ?? .thinkingOrb(.working)
         }
     }
 
-    private func randomCurveLoaderPreset(excluding current: MathCurveLoaderPreset?) -> MathCurveLoaderPreset {
-        let presets = MathCurveLoaderPreset.allCases
+    private func randomCurveLoaderPreset(excluding current: DynamicGraphicPreset?) -> DynamicGraphicPreset {
+        let presets = DynamicGraphicPreset.randomCases
         guard presets.count > 1 else {
-            return presets.first ?? .originalThinking
+            return presets.first ?? .thinkingOrb(.working)
         }
         let candidates = presets.filter { $0 != current }
-        return candidates.randomElement() ?? presets.randomElement() ?? .originalThinking
+        return candidates.randomElement() ?? presets.randomElement() ?? .thinkingOrb(.working)
     }
 
-    private func setActiveCurveLoaderPreset(_ preset: MathCurveLoaderPreset, at now: CFTimeInterval) {
+    private func setActiveCurveLoaderPreset(_ preset: DynamicGraphicPreset, at now: CFTimeInterval) {
         if let activeCurveLoaderPreset, activeCurveLoaderPreset != preset {
             curveLoaderTransitionSnapshot = CurveLoaderTransitionSnapshot(
                 preset: activeCurveLoaderPreset,
@@ -755,7 +787,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func cachedCurveLoaderImage(
-        preset: MathCurveLoaderPreset,
+        preset: DynamicGraphicPreset,
         timeMilliseconds: Double,
         phaseOffset: Double,
         color: NSColor,
@@ -772,7 +804,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         if let cachedImage = curveLoaderImageCache.object(forKey: key) {
             return cachedImage
         }
-        guard let image = MathCurveLoaderRenderer.makeImage(
+        guard let image = DynamicGraphicRenderer.makeImage(
             preset: preset,
             timeMilliseconds: quantizedTime,
             phaseOffset: phaseOffset,
@@ -791,7 +823,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func curveLoaderImageCacheKey(
-        preset: MathCurveLoaderPreset,
+        preset: DynamicGraphicPreset,
         timeMilliseconds: Double,
         phaseOffset: Double,
         color: NSColor,
@@ -1651,6 +1683,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             displayModeKey,
             maxColorRateKey,
             colorRatePercentKey,
+            coloringEnabledKey,
             smoothTransitionKey,
             minimalSignalShowsTrafficTotalsKey,
             minimalSignalBlinkSpeedPercentKey,

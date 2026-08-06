@@ -3,14 +3,14 @@ import Foundation
 
 enum MathCurveLoaderSelection: RawRepresentable, Hashable {
     case random
-    case preset(MathCurveLoaderPreset)
+    case preset(DynamicGraphicPreset)
 
     init?(rawValue: String) {
         if rawValue == "random" {
             self = .random
             return
         }
-        guard let preset = MathCurveLoaderPreset(rawValue: rawValue) else {
+        guard let preset = DynamicGraphicPreset(rawValue: rawValue) else {
             return nil
         }
         self = .preset(preset)
