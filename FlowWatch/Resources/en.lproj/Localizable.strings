@@ -322,6 +322,17 @@
 "perApp.range.allTime" = "All Time";
 "perApp.summary.totalDownload" = "Total Download";
 "perApp.summary.totalUpload" = "Total Upload";
+"perApp.summary.totalUsage" = "Total Traffic";
+"perApp.chart.loading" = "Aggregating app traffic…";
+"perApp.summaryCharts.composition.title" = "Traffic Mix";
+"perApp.summaryCharts.composition.subtitle" = "Leading items by cumulative usage";
+"perApp.summaryCharts.trend.title" = "Usage Trend";
+"perApp.summaryCharts.trend.subtitle" = "Smooth traffic trend for the Top 5 and Others";
+"perApp.summaryCharts.top5" = "Top 5 + Others";
+"perApp.summaryCharts.others" = "Others";
+"perApp.summaryCharts.bucketDays" = "%d days / point";
+"perApp.summaryCharts.time" = "Time";
+"perApp.summaryCharts.usage" = "Usage";
 
 "settings.statusBar.interval" = "Sample interval";
 "settings.statusBar.interval.value" = "%d s";

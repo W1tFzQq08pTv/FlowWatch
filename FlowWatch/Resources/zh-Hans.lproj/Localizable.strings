@@ -322,6 +322,17 @@
 "perApp.range.allTime" = "全部";
 "perApp.summary.totalDownload" = "总下载";
 "perApp.summary.totalUpload" = "总上传";
+"perApp.summary.totalUsage" = "总流量";
+"perApp.chart.loading" = "正在聚合应用流量…";
+"perApp.summaryCharts.composition.title" = "流量构成";
+"perApp.summaryCharts.composition.subtitle" = "按累计用量展示主要项目";
+"perApp.summaryCharts.trend.title" = "用量趋势";
+"perApp.summaryCharts.trend.subtitle" = "Top 5 与其余流量的平滑时间走势";
+"perApp.summaryCharts.top5" = "Top 5 + 其余";
+"perApp.summaryCharts.others" = "其余";
+"perApp.summaryCharts.bucketDays" = "每点 %d 天";
+"perApp.summaryCharts.time" = "时间";
+"perApp.summaryCharts.usage" = "用量";
 
 "settings.statusBar.interval" = "采样间隔";
 "settings.statusBar.interval.value" = "%d 秒";

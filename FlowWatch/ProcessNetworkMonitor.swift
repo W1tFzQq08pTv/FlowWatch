@@ -428,6 +428,7 @@ final class ProcessNetworkMonitor: ObservableObject {
                 todayRecord = storage.addBytesAndReturnTodayRecord(
                     bundleID: bundleID,
                     displayName: data.info.displayName,
+                    isApp: data.info.isApp,
                     downloadBytes: data.deltaIn,
                     uploadBytes: data.deltaOut
                 )
@@ -453,7 +454,7 @@ final class ProcessNetworkMonitor: ObservableObject {
                     id: record.bundleID,
                     displayName: record.displayName,
                     icon: info.icon,
-                    isApp: info.isApp,
+                    isApp: record.isApp ?? info.isApp,
                     downloadBps: 0,
                     uploadBps: 0,
                     totalDownloaded: record.downloadBytes,

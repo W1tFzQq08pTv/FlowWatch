@@ -1,19 +1,38 @@
 import Foundation
 
-struct AppDailyTrafficRecord: Codable, Identifiable {
+struct AppDailyTrafficRecord: Codable, Identifiable, Sendable {
     let id: String              // "bundleID|YYYY-MM-DD"
     let bundleID: String
     var displayName: String
+    var isApp: Bool?
     let date: Date
     var downloadBytes: UInt64
     var uploadBytes: UInt64
 
-    static func dateId(from date: Date) -> String {
+    nonisolated var persistedDateID: String {
+        guard let separator = id.lastIndex(of: "|") else {
+            return Self.dateId(from: date)
+        }
+        let value = String(id[id.index(after: separator)...])
+        guard value.count == 10 else {
+            return Self.dateId(from: date)
+        }
+        return value
+    }
+
+    nonisolated static func dateId(from date: Date) -> String {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
     }
 
-    init(bundleID: String, displayName: String, date: Date = Date(), downloadBytes: UInt64 = 0, uploadBytes: UInt64 = 0) {
+    init(
+        bundleID: String,
+        displayName: String,
+        isApp: Bool? = nil,
+        date: Date = Date(),
+        downloadBytes: UInt64 = 0,
+        uploadBytes: UInt64 = 0
+    ) {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         self.date = calendar.date(from: components) ?? date
@@ -21,6 +40,7 @@ struct AppDailyTrafficRecord: Codable, Identifiable {
         self.id = "\(bundleID)|\(dateStr)"
         self.bundleID = bundleID
         self.displayName = displayName
+        self.isApp = isApp
         self.downloadBytes = downloadBytes
         self.uploadBytes = uploadBytes
     }
@@ -74,7 +94,7 @@ final class ProcessTrafficStorage {
 
     private func indexRecord(_ record: AppDailyTrafficRecord, at index: Int) {
         recordIndexByID[record.id] = index
-        let dateID = AppDailyTrafficRecord.dateId(from: record.date)
+        let dateID = record.persistedDateID
         recordIDsByDateID[dateID, default: []].insert(record.id)
     }
 
@@ -114,10 +134,17 @@ final class ProcessTrafficStorage {
         try? encoded.write(to: filePath)
     }
 
-    func addBytes(bundleID: String, displayName: String, downloadBytes: UInt64, uploadBytes: UInt64) {
+    func addBytes(
+        bundleID: String,
+        displayName: String,
+        isApp: Bool? = nil,
+        downloadBytes: UInt64,
+        uploadBytes: UInt64
+    ) {
         _ = addBytesAndReturnTodayRecord(
             bundleID: bundleID,
             displayName: displayName,
+            isApp: isApp,
             downloadBytes: downloadBytes,
             uploadBytes: uploadBytes
         )
@@ -127,17 +154,25 @@ final class ProcessTrafficStorage {
     func addBytesAndReturnTodayRecord(
         bundleID: String,
         displayName: String,
+        isApp: Bool? = nil,
         downloadBytes: UInt64,
         uploadBytes: UInt64
     ) -> AppDailyTrafficRecord {
         lock.lock()
         defer { lock.unlock() }
 
-        let record = AppDailyTrafficRecord(bundleID: bundleID, displayName: displayName)
+        let record = AppDailyTrafficRecord(
+            bundleID: bundleID,
+            displayName: displayName,
+            isApp: isApp
+        )
         if let index = recordIndexByID[record.id] {
             records[index].downloadBytes &+= downloadBytes
             records[index].uploadBytes &+= uploadBytes
             records[index].displayName = displayName
+            if let isApp {
+                records[index].isApp = isApp
+            }
             isDirty = true
             return records[index]
         } else {
@@ -188,21 +223,44 @@ final class ProcessTrafficStorage {
         }.prefix(limit))
     }
 
-    func getAggregatedRecords(from startDate: Date, to endDate: Date) -> [(bundleID: String, displayName: String, downloadBytes: UInt64, uploadBytes: UInt64)] {
-        lock.lock()
-        let snapshot = records
-        lock.unlock()
-
+    func getRecords(from startDate: Date, to endDate: Date) -> [AppDailyTrafficRecord] {
         let calendar = Calendar.current
         let startDay = calendar.startOfDay(for: startDate)
-        let endDay = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: endDate) ?? endDate)
+        let endDay = calendar.startOfDay(for: endDate)
+        guard startDay <= endDay else { return [] }
+
+        var dateIDs: [String] = []
+        var currentDate = startDay
+        while currentDate <= endDay {
+            dateIDs.append(AppDailyTrafficRecord.dateId(from: currentDate))
+            guard let nextDate = calendar.date(byAdding: .day, value: 1, to: currentDate) else {
+                break
+            }
+            currentDate = nextDate
+        }
+
+        lock.lock()
+        var snapshot: [AppDailyTrafficRecord] = []
+        for dateID in dateIDs {
+            snapshot.append(contentsOf: recordsLocked(forDateID: dateID))
+        }
+        lock.unlock()
+
+        return snapshot
+    }
+
+    func getAllRecords() -> [AppDailyTrafficRecord] {
+        lock.lock()
+        defer { lock.unlock() }
+        return records
+    }
+
+    func getAggregatedRecords(from startDate: Date, to endDate: Date) -> [(bundleID: String, displayName: String, downloadBytes: UInt64, uploadBytes: UInt64)] {
+        let snapshot = getRecords(from: startDate, to: endDate)
 
         var aggregated: [String: (displayName: String, downloadBytes: UInt64, uploadBytes: UInt64)] = [:]
 
         for record in snapshot {
-            let recordDay = calendar.startOfDay(for: record.date)
-            guard recordDay >= startDay && recordDay < endDay else { continue }
-
             if var existing = aggregated[record.bundleID] {
                 existing.downloadBytes &+= record.downloadBytes
                 existing.uploadBytes &+= record.uploadBytes
@@ -217,9 +275,7 @@ final class ProcessTrafficStorage {
     }
 
     func getAllRecordsAggregated() -> [(bundleID: String, displayName: String, downloadBytes: UInt64, uploadBytes: UInt64)] {
-        lock.lock()
-        let snapshot = records
-        lock.unlock()
+        let snapshot = getAllRecords()
 
         var aggregated: [String: (displayName: String, downloadBytes: UInt64, uploadBytes: UInt64)] = [:]
 
