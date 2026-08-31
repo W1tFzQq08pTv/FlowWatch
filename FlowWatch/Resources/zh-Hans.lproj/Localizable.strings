@@ -73,6 +73,9 @@
 "settings.launchAtLogin.toggle" = "开机自动启动";
 "settings.update.autoCheck" = "自动检测更新";
 "settings.update.hint" = "仅影响自动检查，手动检查不受影响。";
+"settings.update.autoInstall" = "自动检查并安装更新";
+"settings.update.autoInstallHint" = "每天自动检查，后台下载并在系统允许时完成替换和重启。";
+"settings.update.appManagementHint" = "未签名版本首次更新时，macOS 可能要求在“隐私与安全性 → App 管理”中允许 FlowWatch 更新应用。";
 "settings.logging.toggle" = "日志输出";
 "settings.logging.hint" = "日志按日期保存，仅保留最近 7 天。";
 "settings.logging.openFolder" = "打开日志文件夹";

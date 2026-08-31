@@ -372,8 +372,8 @@ struct SettingsView: View {
         case .updates:
             settingsPanel(title: l10n.t("settings.group.updatePolicy"), systemImage: "arrow.triangle.2.circlepath") {
                 settingsRow(
-                    title: l10n.t("settings.update.autoCheck"),
-                    detail: l10n.t("settings.update.hint")
+                    title: l10n.t(updateManager.usesIntegratedUpdater ? "settings.update.autoInstall" : "settings.update.autoCheck"),
+                    detail: l10n.t(updateManager.usesIntegratedUpdater ? "settings.update.autoInstallHint" : "settings.update.hint")
                 ) {
                     ModernSwitch(
                         isOn: Binding(
@@ -388,6 +388,12 @@ struct SettingsView: View {
                         ),
                         tint: currentSection.tint
                     )
+                }
+                if updateManager.usesIntegratedUpdater {
+                    Label(l10n.t("settings.update.appManagementHint"), systemImage: "lock.shield")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             settingsPanel(title: l10n.t("settings.group.updateStatus"), systemImage: "clock") {

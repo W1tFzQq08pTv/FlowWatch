@@ -351,7 +351,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         NotificationCenter.default.publisher(for: .flowWatchCheckForUpdates)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.updateManager.checkForUpdates(userInitiated: true)
+                self?.updateManager.startAutomaticUpdateChecks()
                 self?.refreshUpdateMenuItem()
             }
             .store(in: &cancellables)
@@ -407,7 +407,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func bindUpdateManager() {
-        updateManager.$status
+        Publishers.CombineLatest(updateManager.$status, updateManager.$canCheckForUpdates)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.refreshUpdateMenuItem()

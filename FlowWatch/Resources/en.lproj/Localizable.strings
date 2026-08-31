@@ -73,6 +73,9 @@
 "settings.launchAtLogin.toggle" = "Launch at login";
 "settings.update.autoCheck" = "Automatically check for updates";
 "settings.update.hint" = "Only affects automatic checks. Manual checks still work.";
+"settings.update.autoInstall" = "Automatically check and install updates";
+"settings.update.autoInstallHint" = "Checks daily, downloads in the background, and replaces and relaunches the app when macOS permits it.";
+"settings.update.appManagementHint" = "On the first update of an unsigned build, macOS may ask you to allow FlowWatch under Privacy & Security → App Management.";
 "settings.logging.toggle" = "Log to file";
 "settings.logging.hint" = "Logs are saved by date and kept for the last 7 days.";
 "settings.logging.openFolder" = "Open Log Folder";

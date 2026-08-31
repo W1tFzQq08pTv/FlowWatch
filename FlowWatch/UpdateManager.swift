@@ -8,6 +8,7 @@
 import AppKit
 import Combine
 import Foundation
+import Sparkle
 
 @MainActor
 final class UpdateManager: NSObject, ObservableObject {
@@ -25,23 +26,23 @@ final class UpdateManager: NSObject, ObservableObject {
     @Published private(set) var lastCheckDate: Date?
     @Published private(set) var nextCheckDate: Date?
     @Published private(set) var cachedLatestVersion: String?
+    @Published private(set) var canCheckForUpdates = false
+
+    var usesIntegratedUpdater: Bool {
+        installMethod == .dmg
+    }
 
     private let installMethod: InstallMethod
     private let lastCheckKey = "update.lastCheckTimestamp"
     private let autoCheckEnabledKey = "update.autoCheckEnabled"
     private let cachedLatestVersionKey = "update.cachedLatestVersion"
-    private let cachedReleaseURLKey = "update.cachedReleaseURL"
-    private let cachedDownloadURLKey = "update.cachedDownloadURL"
     private let autoCheckInterval: TimeInterval = 60 * 60 * 24
     private let initialAutoCheckDelay: TimeInterval = 5
     private let homebrewFormula = "flowwatch"
     private let notificationCenter = UpdateNotificationCenter.shared
-    private static let githubReleaseAPIURL = URL(string: "https://api.github.com/repos/W1tFzQq08pTv/FlowWatch/releases/latest")
-    private static let githubReleasePageURL = "https://github.com/W1tFzQq08pTv/FlowWatch/releases/latest"
-    private static let githubUserAgent = "FlowWatch"
     private var autoCheckTimer: Timer?
-    private var cachedReleaseURL: String?
-    private var cachedDownloadURL: String?
+    private var updaterController: SPUStandardUpdaterController?
+    private var canCheckForUpdatesObservation: NSKeyValueObservation?
 
     init(installMethod: InstallMethod = InstallMethodDetector.detect()) {
         self.installMethod = installMethod
@@ -50,37 +51,37 @@ final class UpdateManager: NSObject, ObservableObject {
         loadLastCheckDate()
         loadCachedLatestVersion()
         clearCachedVersionIfNeeded()
-        scheduleAutoCheckTimer()
+        configureUpdater()
+        startAutomaticUpdateChecks()
         NotificationCenter.default.addObserver(self, selector: #selector(handleUserDefaultsChanged), name: UserDefaults.didChangeNotification, object: nil)
-    }
-
-    var canCheckForUpdates: Bool {
-        switch installMethod {
-        case .homebrew:
-            return status != .updating
-        case .dmg:
-            return status != .updating
-        }
     }
 
     func checkForUpdates(userInitiated: Bool) {
         LogManager.shared.log("Check for updates (userInitiated=\(userInitiated))")
-        recordLastCheck()
         switch installMethod {
         case .homebrew:
+            recordLastCheck()
             checkHomebrew(userInitiated: userInitiated)
         case .dmg:
-            checkGitHubRelease(userInitiated: userInitiated)
+            checkSparkle(userInitiated: userInitiated)
         }
     }
 
     func checkForUpdatesIfNeeded() {
+        guard installMethod == .homebrew else { return }
         guard shouldAutoCheck() else { return }
         checkForUpdates(userInitiated: false)
     }
 
     func startAutomaticUpdateChecks() {
-        scheduleAutoCheckTimer()
+        switch installMethod {
+        case .homebrew:
+            canCheckForUpdates = status != .updating
+            scheduleAutoCheckTimer()
+        case .dmg:
+            applySparkleUpdatePreferences()
+            refreshSparkleScheduleDates()
+        }
     }
 
     func performCachedUpdateAction() -> Bool {
@@ -91,60 +92,70 @@ final class UpdateManager: NSObject, ObservableObject {
         case .homebrew:
             copyBrewUpgradeCommand()
         case .dmg:
-            openUpdateURL(releaseURLString: cachedReleaseURL, downloadURLString: cachedDownloadURL)
+            checkSparkle(userInitiated: true)
         }
         return true
     }
 
-    private func checkGitHubRelease(userInitiated: Bool) {
-        status = .checking
-        let currentVersion = AppVersion.shortVersion
-        LogManager.shared.log("Checking GitHub release (currentVersion=\(currentVersion), userInitiated=\(userInitiated))")
-        Task.detached { [weak self] in
-            do {
-                let release = try await Self.fetchLatestRelease()
-                let latestVersion = Self.normalizedVersion(release.tagName)
-                guard !latestVersion.isEmpty else {
-                    throw GitHubUpdateError.invalidRelease
-                }
-                let isNewer = Self.compareVersions(latestVersion, currentVersion) == .orderedDescending
-                await MainActor.run {
-                    guard let self else { return }
-                    if isNewer {
-                        let shouldNotify = self.cachedLatestVersion != latestVersion
-                        self.storeCachedLatestRelease(
-                            version: latestVersion,
-                            releaseURL: release.htmlURL,
-                            downloadURL: release.dmgDownloadURL
-                        )
-                        LogManager.shared.log("GitHub release update available: \(latestVersion)")
-                        self.status = .updateAvailable(version: latestVersion)
-                        if shouldNotify {
-                            self.notifyGitHubUpdateAvailable(
-                                version: latestVersion,
-                                releaseURLString: release.htmlURL,
-                                downloadURLString: release.dmgDownloadURL
-                            )
-                        }
-                    } else {
-                        self.storeCachedLatestRelease(version: nil, releaseURL: nil, downloadURL: nil)
-                        self.status = .upToDate
-                        LogManager.shared.log("GitHub release is up to date")
-                        if userInitiated {
-                            self.notifyUpToDate()
-                        }
-                        self.status = .idle
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    guard let self else { return }
-                    self.status = .failed(message: self.message(for: error))
-                    self.notifyCheckFailed(message: self.message(for: error))
-                    LogManager.shared.log("GitHub update check failed: \(error)", level: .error)
-                    self.status = .idle
+    private func configureUpdater() {
+        guard installMethod == .dmg else { return }
+        let controller = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: self,
+            userDriverDelegate: nil
+        )
+        updaterController = controller
+        canCheckForUpdatesObservation = controller.updater.observe(
+            \.canCheckForUpdates,
+            options: [.initial, .new]
+        ) { [weak self] updater, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.canCheckForUpdates = updater.canCheckForUpdates
+                if updater.canCheckForUpdates {
+                    self.applySparkleUpdatePreferences()
+                    self.refreshSparkleScheduleDates()
                 }
             }
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.applySparkleUpdatePreferences()
+            self?.refreshSparkleScheduleDates()
+        }
+    }
+
+    private func applySparkleUpdatePreferences() {
+        guard let updater = updaterController?.updater else { return }
+        let automaticUpdatesEnabled = isAutoCheckEnabled()
+        var didChange = false
+        if updater.automaticallyChecksForUpdates != automaticUpdatesEnabled {
+            updater.automaticallyChecksForUpdates = automaticUpdatesEnabled
+            didChange = true
+        }
+        if updater.automaticallyDownloadsUpdates != automaticUpdatesEnabled {
+            updater.automaticallyDownloadsUpdates = automaticUpdatesEnabled
+            didChange = true
+        }
+        if didChange {
+            LogManager.shared.log("Sparkle automatic checks and installs enabled: \(automaticUpdatesEnabled)")
+        }
+    }
+
+    private func checkSparkle(userInitiated: Bool) {
+        guard let updaterController else {
+            status = .failed(message: LocalizationManager.shared.t("update.dmg.unavailable"))
+            return
+        }
+        guard updaterController.updater.canCheckForUpdates else {
+            LogManager.shared.log("Sparkle update check is not ready")
+            return
+        }
+        status = .checking
+        LogManager.shared.log("Starting Sparkle update check (userInitiated=\(userInitiated))")
+        if userInitiated {
+            updaterController.checkForUpdates(nil)
+        } else if updaterController.updater.automaticallyChecksForUpdates {
+            updaterController.updater.checkForUpdatesInBackground()
         }
     }
 
@@ -161,14 +172,14 @@ final class UpdateManager: NSObject, ObservableObject {
                     guard let self else { return }
                     if isNewer {
                         let shouldNotify = self.cachedLatestVersion != latestVersion
-                        self.storeCachedLatestRelease(version: latestVersion, releaseURL: nil, downloadURL: nil)
+                        self.storeCachedLatestVersion(latestVersion)
                         LogManager.shared.log("Homebrew update available: \(latestVersion)")
                         self.status = .updateAvailable(version: latestVersion)
                         if shouldNotify {
                             self.notifyHomebrewUpdateAvailable(version: latestVersion)
                         }
                     } else {
-                        self.storeCachedLatestRelease(version: nil, releaseURL: nil, downloadURL: nil)
+                        self.storeCachedLatestVersion(nil)
                         self.status = .upToDate
                         LogManager.shared.log("Homebrew is up to date")
                         if userInitiated {
@@ -218,15 +229,6 @@ final class UpdateManager: NSObject, ObservableObject {
             self?.copyBrewUpgradeCommand()
         }
     }
-
-    private func notifyGitHubUpdateAvailable(version: String, releaseURLString: String?, downloadURLString: String?) {
-        let messageKey = "update.available.message.dmg"
-        notifyUpdateAvailable(version: version, messageKey: messageKey) { [weak self] in
-            LogManager.shared.log("Open GitHub release page (version=\(version))")
-            self?.openUpdateURL(releaseURLString: releaseURLString, downloadURLString: downloadURLString)
-        }
-    }
-
     private func copyBrewUpgradeCommand() {
         let command = "brew upgrade \(homebrewFormula)"
         NSPasteboard.general.clearContents()
@@ -238,18 +240,13 @@ final class UpdateManager: NSObject, ObservableObject {
         )
     }
 
-    private func openUpdateURL(releaseURLString: String?, downloadURLString _: String?) {
-        let fallback = Self.githubReleasePageURL
-        let urlString = releaseURLString ?? fallback
-        guard let url = URL(string: urlString) else { return }
-        NSWorkspace.shared.open(url)
-    }
-
     private func recordLastCheck() {
         let now = Date()
         UserDefaults.standard.set(now.timeIntervalSince1970, forKey: lastCheckKey)
         lastCheckDate = now
-        scheduleAutoCheckTimer()
+        if installMethod == .homebrew {
+            scheduleAutoCheckTimer()
+        }
     }
 
     private func shouldAutoCheck() -> Bool {
@@ -280,43 +277,28 @@ final class UpdateManager: NSObject, ObservableObject {
 
     private func loadCachedLatestVersion() {
         cachedLatestVersion = UserDefaults.standard.string(forKey: cachedLatestVersionKey)
-        cachedReleaseURL = UserDefaults.standard.string(forKey: cachedReleaseURLKey)
-        cachedDownloadURL = UserDefaults.standard.string(forKey: cachedDownloadURLKey)
     }
 
-    private func storeCachedLatestRelease(version: String?, releaseURL: String?, downloadURL: String?) {
+    private func storeCachedLatestVersion(_ version: String?) {
         if let version {
             UserDefaults.standard.set(version, forKey: cachedLatestVersionKey)
-            if let releaseURL {
-                UserDefaults.standard.set(releaseURL, forKey: cachedReleaseURLKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: cachedReleaseURLKey)
-            }
-            if let downloadURL {
-                UserDefaults.standard.set(downloadURL, forKey: cachedDownloadURLKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: cachedDownloadURLKey)
-            }
         } else {
             UserDefaults.standard.removeObject(forKey: cachedLatestVersionKey)
-            UserDefaults.standard.removeObject(forKey: cachedReleaseURLKey)
-            UserDefaults.standard.removeObject(forKey: cachedDownloadURLKey)
         }
         cachedLatestVersion = version
-        cachedReleaseURL = releaseURL
-        cachedDownloadURL = downloadURL
     }
 
     private func clearCachedVersionIfNeeded() {
         guard let cachedLatestVersion else { return }
         if Self.compareVersions(cachedLatestVersion, AppVersion.shortVersion) != .orderedDescending {
-            storeCachedLatestRelease(version: nil, releaseURL: nil, downloadURL: nil)
+            storeCachedLatestVersion(nil)
         }
     }
 
     private func scheduleAutoCheckTimer() {
         autoCheckTimer?.invalidate()
         autoCheckTimer = nil
+        guard installMethod == .homebrew else { return }
 
         let now = Date()
 
@@ -359,6 +341,20 @@ final class UpdateManager: NSObject, ObservableObject {
         return next
     }
 
+    private func refreshSparkleScheduleDates() {
+        guard installMethod == .dmg,
+              let updater = updaterController?.updater else { return }
+        if let sparkleLastCheckDate = updater.lastUpdateCheckDate {
+            lastCheckDate = sparkleLastCheckDate
+        }
+        guard updater.automaticallyChecksForUpdates else {
+            nextCheckDate = nil
+            return
+        }
+        let baseDate = updater.lastUpdateCheckDate ?? Date()
+        nextCheckDate = baseDate.addingTimeInterval(updater.updateCheckInterval)
+    }
+
     private func handleAutoCheckTimerFired() {
         guard isAutoCheckEnabled() else {
             scheduleAutoCheckTimer()
@@ -369,7 +365,9 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 
     @objc private func handleUserDefaultsChanged() {
-        let keysToCheck = [autoCheckEnabledKey, lastCheckKey]
+        let keysToCheck = installMethod == .homebrew
+            ? [autoCheckEnabledKey, lastCheckKey]
+            : [autoCheckEnabledKey]
         let currentState = defaultsSignature(for: keysToCheck)
         if let lastDefaultsSignature, lastDefaultsSignature == currentState {
             return
@@ -378,7 +376,7 @@ final class UpdateManager: NSObject, ObservableObject {
         loadLastCheckDate()
         loadCachedLatestVersion()
         clearCachedVersionIfNeeded()
-        scheduleAutoCheckTimer()
+        startAutomaticUpdateChecks()
     }
 
     private func defaultsSignature(for keys: [String]) -> String {
@@ -398,68 +396,6 @@ final class UpdateManager: NSObject, ObservableObject {
 
     private var lastDefaultsSignature: String?
 
-    nonisolated private static func fetchLatestRelease() async throws -> GitHubRelease {
-        do {
-            return try await fetchLatestReleaseFromAPI()
-        } catch {
-            return try await fetchLatestReleaseFromRedirect()
-        }
-    }
-
-    nonisolated private static func fetchLatestReleaseFromAPI() async throws -> GitHubRelease {
-        guard let url = githubReleaseAPIURL else {
-            throw GitHubUpdateError.invalidRelease
-        }
-        var request = URLRequest(url: url)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue(githubUserAgent, forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw GitHubUpdateError.invalidRelease
-        }
-        if httpResponse.statusCode == 403,
-           httpResponse.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0" {
-            throw GitHubUpdateError.rateLimited
-        }
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            throw GitHubUpdateError.invalidRelease
-        }
-
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(GitHubRelease.self, from: data)
-    }
-
-    nonisolated private static func fetchLatestReleaseFromRedirect() async throws -> GitHubRelease {
-        guard let url = URL(string: githubReleasePageURL) else {
-            throw GitHubUpdateError.invalidRelease
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "HEAD"
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let finalURL = response.url else {
-            throw GitHubUpdateError.invalidRelease
-        }
-        let tag = finalURL.lastPathComponent
-        guard !tag.isEmpty else {
-            throw GitHubUpdateError.invalidRelease
-        }
-        let htmlURL = "https://github.com/W1tFzQq08pTv/FlowWatch/releases/tag/\(tag)"
-        let downloadURL = "https://github.com/W1tFzQq08pTv/FlowWatch/releases/download/\(tag)/FlowWatch.dmg"
-        let asset = GitHubAsset(name: "FlowWatch.dmg", browserDownloadURL: downloadURL)
-        return GitHubRelease(tagName: tag, htmlURL: htmlURL, assets: [asset])
-    }
-
-    nonisolated private static func normalizedVersion(_ version: String) -> String {
-        let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("v") || trimmed.hasPrefix("V") {
-            return String(trimmed.dropFirst())
-        }
-        return trimmed
-    }
-
     private func message(for error: Error) -> String {
         if let urlError = error as? URLError {
             switch urlError.code {
@@ -467,14 +403,6 @@ final class UpdateManager: NSObject, ObservableObject {
                 return LocalizationManager.shared.t("update.network.error")
             default:
                 break
-            }
-        }
-        if let githubError = error as? GitHubUpdateError {
-            switch githubError {
-            case .invalidRelease:
-                return LocalizationManager.shared.t("update.github.invalidRelease")
-            case .rateLimited:
-                return LocalizationManager.shared.t("update.github.rateLimited")
             }
         }
         if let brewError = error as? HomebrewError {
@@ -601,52 +529,62 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 }
 
+extension UpdateManager: SPUUpdaterDelegate {
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        let version = item.displayVersionString
+        storeCachedLatestVersion(version)
+        status = .updateAvailable(version: version)
+        LogManager.shared.log("Sparkle update available: \(version)")
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        storeCachedLatestVersion(nil)
+        status = .upToDate
+        LogManager.shared.log("Sparkle reports FlowWatch is up to date")
+    }
+
+    func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest) {
+        status = .updating
+        LogManager.shared.log("Sparkle is downloading update \(item.displayVersionString)")
+    }
+
+    func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        status = .updating
+        LogManager.shared.log("Sparkle is installing update \(item.displayVersionString)")
+    }
+
+    func updater(
+        _ updater: SPUUpdater,
+        didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
+        error: Error?
+    ) {
+        refreshSparkleScheduleDates()
+        if case .checking = status {
+            status = .idle
+        } else if case .updating = status,
+                  let cachedLatestVersion {
+            status = .updateAvailable(version: cachedLatestVersion)
+        }
+        if let error {
+            LogManager.shared.log("Sparkle update cycle finished: \(error.localizedDescription)", level: .error)
+        } else {
+            LogManager.shared.log("Sparkle update cycle finished")
+        }
+    }
+
+    func updater(_ updater: SPUUpdater, willScheduleUpdateCheckAfterDelay delay: TimeInterval) {
+        nextCheckDate = Date().addingTimeInterval(delay)
+    }
+
+    func updaterWillNotScheduleUpdateCheck(_ updater: SPUUpdater) {
+        nextCheckDate = nil
+    }
+}
+
 private enum HomebrewError: Error {
     case notFound
     case invalidOutput
     case commandFailed(String)
-}
-
-private enum GitHubUpdateError: Error {
-    case invalidRelease
-    case rateLimited
-}
-
-private struct GitHubRelease: Decodable {
-    let tagName: String
-    let htmlURL: String
-    let assets: [GitHubAsset]
-
-    init(tagName: String, htmlURL: String, assets: [GitHubAsset]) {
-        self.tagName = tagName
-        self.htmlURL = htmlURL
-        self.assets = assets
-    }
-
-    var dmgDownloadURL: String? {
-        assets.first { $0.name.lowercased().hasSuffix(".dmg") }?.browserDownloadURL
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case tagName = "tag_name"
-        case htmlURL = "html_url"
-        case assets
-    }
-}
-
-private struct GitHubAsset: Decodable {
-    let name: String
-    let browserDownloadURL: String
-
-    init(name: String, browserDownloadURL: String) {
-        self.name = name
-        self.browserDownloadURL = browserDownloadURL
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case name
-        case browserDownloadURL = "browser_download_url"
-    }
 }
 
 private struct BrewInfoResponse: Decodable {
