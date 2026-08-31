@@ -68,7 +68,13 @@ INFO_PLIST="$OUTPUT_APP/Contents/Info.plist"
 [[ "$(plutil -extract SUPublicEDKey raw -o - "$INFO_PLIST")" == "$PUBLIC_KEY" ]]
 
 ditto -c -k --sequesterRsrc --keepParent "$OUTPUT_APP" "$OUTPUT_ZIP"
-shasum -a 256 "$OUTPUT_ZIP" "$OUTPUT_APP/Contents/MacOS/$PRODUCT_NAME" > "$OUTPUT_DIR/SHA256SUMS.txt"
+(
+  cd "$OUTPUT_DIR"
+  shasum -a 256 \
+    "$(basename "$OUTPUT_ZIP")" \
+    "$(basename "$OUTPUT_APP")/Contents/MacOS/$PRODUCT_NAME" \
+    > SHA256SUMS.txt
+)
 
 echo "QA app generated: $OUTPUT_APP"
 echo "QA archive generated: $OUTPUT_ZIP"
