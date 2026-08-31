@@ -45,8 +45,7 @@ final class DailyTrafficStorage {
     }
 
     private var filePath: URL {
-        let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let appSupport = paths[0].appendingPathComponent("FlowWatch")
+        let appSupport = AppSupportPaths.applicationDirectory
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
         return appSupport.appendingPathComponent("daily_traffic.json")
     }

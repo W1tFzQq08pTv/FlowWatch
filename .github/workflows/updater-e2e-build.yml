@@ -1,0 +1,94 @@
+name: Sparkle Updater E2E Target
+
+on:
+  push:
+    branches:
+      - "codex/updater-e2e-qa"
+    paths:
+      - ".github/workflows/updater-e2e-build.yml"
+      - "Config/FlowWatch-QA-Info.plist"
+      - "FlowWatch/AppSupportPaths.swift"
+      - "FlowWatch/DailyTrafficStorage.swift"
+      - "FlowWatch/LogManager.swift"
+      - "FlowWatch/ProcessTrafficStorage.swift"
+      - "scripts/build_updater_qa.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-sign-target:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout QA source
+        uses: actions/checkout@v4
+
+      - name: Build target QA app
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}/flowwatch-updater-target
+          MARKETING_VERSION: 99.0.2
+          CURRENT_PROJECT_VERSION: 900002
+        run: zsh scripts/build_updater_qa.sh
+
+      - name: Fetch official Sparkle appcast tool
+        env:
+          SPARKLE_VERSION: 2.9.6
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="$RUNNER_TEMP/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          TOOLS_DIR="$RUNNER_TEMP/sparkle-tools"
+          curl -fL -o "$ARCHIVE_PATH" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir -p "$TOOLS_DIR"
+          tar -xf "$ARCHIVE_PATH" -C "$TOOLS_DIR"
+          GENERATE_APPCAST_PATH="$(find "$TOOLS_DIR" -type f -name generate_appcast | head -n1)"
+          if [[ -z "$GENERATE_APPCAST_PATH" || ! -x "$GENERATE_APPCAST_PATH" ]]; then
+            echo "Unable to locate Sparkle generate_appcast."
+            exit 1
+          fi
+          echo "SPARKLE_GENERATE_APPCAST=$GENERATE_APPCAST_PATH" >> "$GITHUB_ENV"
+
+      - name: Generate production-key-signed QA appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          QA_OUTPUT_DIR: ${{ runner.temp }}/flowwatch-updater-target
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+            echo "SPARKLE_PRIVATE_KEY is missing."
+            exit 1
+          fi
+          INPUT_DIR="$RUNNER_TEMP/flowwatch-updater-appcast-input"
+          KEY_FILE="$RUNNER_TEMP/flowwatch-sparkle-private.key"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          mkdir -p "$INPUT_DIR"
+          cp "$QA_OUTPUT_DIR/FlowWatchUpdateQA.zip" "$INPUT_DIR/FlowWatchUpdateQA.zip"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          "$SPARKLE_GENERATE_APPCAST" \
+            --ed-key-file "$KEY_FILE" \
+            --download-url-prefix "http://localhost:18765/" \
+            -o "$QA_OUTPUT_DIR/appcast.xml" \
+            "$INPUT_DIR"
+          rm -f "$KEY_FILE"
+          grep -q 'sparkle:edSignature' "$QA_OUTPUT_DIR/appcast.xml"
+          grep -q 'sparkle:version="900002"' "$QA_OUTPUT_DIR/appcast.xml"
+          grep -q 'FlowWatchUpdateQA.zip' "$QA_OUTPUT_DIR/appcast.xml"
+          {
+            echo "marketing_version=99.0.2"
+            echo "build_version=900002"
+            echo "bundle_identifier=com.hxd.FlowWatch.UpdateQA"
+            echo "public_key=Kw0xtR66Yv2vZR3BhYrO1fHoVJDj2/wr5KsPNHBHUd4="
+          } > "$QA_OUTPUT_DIR/BUILD-METADATA.txt"
+
+      - name: Upload signed target artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowwatch-updater-e2e-target-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/flowwatch-updater-target/FlowWatchUpdateQA.zip
+            ${{ runner.temp }}/flowwatch-updater-target/appcast.xml
+            ${{ runner.temp }}/flowwatch-updater-target/SHA256SUMS.txt
+            ${{ runner.temp }}/flowwatch-updater-target/BUILD-METADATA.txt
+          if-no-files-found: error
+          retention-days: 3
