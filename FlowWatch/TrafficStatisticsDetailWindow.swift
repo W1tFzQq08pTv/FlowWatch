@@ -26,8 +26,8 @@ final class TrafficStatisticsDetailWindowController: NSWindowController, NSWindo
         window.titlebarAppearsTransparent = true
         window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 720, height: 560))
-        window.minSize = NSSize(width: 660, height: 500)
+        window.setContentSize(NSSize(width: 900, height: 660))
+        window.minSize = NSSize(width: 760, height: 560)
         window.delegate = self
         return window
     }
@@ -66,14 +66,16 @@ struct TrafficStatisticsDetailView: View {
             detailPane
         }
         .flowWatchWindowSurface()
-        .frame(minWidth: 660, minHeight: 500)
-        .onAppear {
-            viewModel.reload()
-        }
+        .frame(minWidth: 760, minHeight: 560)
     }
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 16) {
+            sidebarHeader
+
+            Divider()
+                .opacity(0.45)
+
             VStack(spacing: 6) {
                 ForEach(StatisticsSection.allCases) { section in
                     sidebarRow(section)
@@ -84,8 +86,46 @@ struct TrafficStatisticsDetailView: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .frame(width: 218)
-        .background(.regularMaterial)
+        .frame(width: 224)
+        .background {
+            ZStack {
+                Rectangle()
+                    .fill(.regularMaterial)
+                LinearGradient(
+                    colors: [FlowWatchPalette.accent.opacity(0.08), Color.clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        }
+    }
+
+    private var sidebarHeader: some View {
+        HStack(alignment: .center, spacing: 11) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [FlowWatchPalette.accent.opacity(0.95), FlowWatchPalette.download.opacity(0.72)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: "chart.xyaxis.line")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 38, height: 38)
+            .shadow(color: FlowWatchPalette.accent.opacity(0.20), radius: 8, x: 0, y: 3)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(l10n.t("statistics.title"))
+                    .font(.system(size: 14, weight: .semibold))
+                Text(l10n.t("statistics.sidebar.subtitle"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private func sidebarRow(_ section: StatisticsSection) -> some View {
@@ -119,10 +159,25 @@ struct TrafficStatisticsDetailView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                isSelected ? FlowWatchPalette.accent.opacity(0.12) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        isSelected
+                            ? LinearGradient(
+                                colors: [FlowWatchPalette.accent.opacity(0.17), FlowWatchPalette.accent.opacity(0.07)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                            : LinearGradient(colors: [Color.clear], startPoint: .leading, endPoint: .trailing)
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(
+                        isSelected ? FlowWatchPalette.accent.opacity(0.20) : Color.clear,
+                        lineWidth: 1
+                    )
+            }
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -135,7 +190,7 @@ struct TrafficStatisticsDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 detailHeader
 
-                if !summary.hasData {
+                if !summary.hasData && selectedSection != .charts {
                     emptyState
                 }
 
@@ -166,9 +221,12 @@ struct TrafficStatisticsDetailView: View {
 
             Spacer()
 
-            Text(l10n.t("settings.data.localOnly"))
+            Label(l10n.t("settings.data.localOnly"), systemImage: "lock.fill")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .flowWatchGlassCapsule(material: .thin)
         }
         .padding(.bottom, 12)
         .overlay(alignment: .bottom) {
@@ -182,6 +240,8 @@ struct TrafficStatisticsDetailView: View {
         switch selectedSection {
         case .overview:
             overviewSection
+        case .charts:
+            StatisticsChartDashboard(records: viewModel.records)
         case .trends:
             trendSection
         case .fun:
@@ -214,7 +274,9 @@ struct TrafficStatisticsDetailView: View {
     }
 
     private var overviewSection: some View {
-        statisticsPanel(title: l10n.t("statistics.section.overview"), systemImage: "square.grid.2x2") {
+        VStack(alignment: .leading, spacing: 14) {
+            overviewHero
+
             LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
                 metricCard(
                     title: l10n.t("statistics.overview.totalDownload"),
@@ -227,12 +289,6 @@ struct TrafficStatisticsDetailView: View {
                     value: TrafficStatsFormatter.bytes(summary.totalUploaded),
                     caption: l10n.t("daily.upload"),
                     tint: FlowWatchPalette.upload
-                )
-                metricCard(
-                    title: l10n.t("statistics.overview.totalTraffic"),
-                    value: TrafficStatsFormatter.bytes(summary.totalBytes),
-                    caption: l10n.t("statistics.range.allHistory"),
-                    tint: FlowWatchPalette.accent
                 )
                 metricCard(
                     title: l10n.t("statistics.overview.todayTraffic"),
@@ -262,160 +318,259 @@ struct TrafficStatisticsDetailView: View {
         }
     }
 
+    private var overviewHero: some View {
+        HStack(alignment: .center, spacing: 18) {
+            ZStack {
+                Circle()
+                    .fill(FlowWatchPalette.accent.opacity(0.10))
+                Circle()
+                    .trim(from: 0.08, to: 0.84)
+                    .stroke(
+                        AngularGradient(
+                            colors: [FlowWatchPalette.download, FlowWatchPalette.accent, FlowWatchPalette.upload],
+                            center: .center
+                        ),
+                        style: StrokeStyle(lineWidth: 7, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(FlowWatchPalette.accent)
+            }
+            .frame(width: 58, height: 58)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(l10n.t("statistics.overview.totalTraffic"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(TrafficStatsFormatter.bytes(summary.totalBytes))
+                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                Text(l10n.t("statistics.range.allHistory"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            VStack(alignment: .trailing, spacing: 7) {
+                heroBreakdown(
+                    title: l10n.t("daily.download"),
+                    value: TrafficStatsFormatter.bytes(summary.totalDownloaded),
+                    color: FlowWatchPalette.download
+                )
+                heroBreakdown(
+                    title: l10n.t("daily.upload"),
+                    value: TrafficStatsFormatter.bytes(summary.totalUploaded),
+                    color: FlowWatchPalette.upload
+                )
+            }
+        }
+        .padding(18)
+        .background {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.thinMaterial)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [FlowWatchPalette.accent.opacity(0.09), FlowWatchPalette.download.opacity(0.025)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(FlowWatchPalette.accent.opacity(0.14), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.035), radius: 12, x: 0, y: 5)
+    }
+
+    private func heroBreakdown(title: String, value: String, color: Color) -> some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+        }
+    }
+
     private var trendSection: some View {
-        statisticsPanel(title: l10n.t("statistics.section.trends"), systemImage: "chart.xyaxis.line") {
-            VStack(spacing: 8) {
-                detailRow(
+        VStack(alignment: .leading, spacing: 14) {
+            LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
+                metricCard(
                     title: l10n.t("statistics.trend.last7Total"),
                     value: TrafficStatsFormatter.bytes(summary.last7TotalBytes),
                     caption: l10n.t("statistics.range.last7Days"),
                     tint: FlowWatchPalette.accent
                 )
-                detailRow(
+                metricCard(
                     title: l10n.t("statistics.trend.last7Average"),
                     value: TrafficStatsFormatter.bytes(summary.last7AverageBytes),
                     caption: l10n.t("statistics.trend.naturalDays"),
                     tint: FlowWatchPalette.accent
                 )
-                detailRow(
-                    title: l10n.t("statistics.trend.historyAverage"),
-                    value: TrafficStatsFormatter.bytes(summary.historyAverageBytes),
-                    caption: l10n.t("daily.section.allHistory"),
-                    tint: FlowWatchPalette.accent
-                )
-                detailRow(
-                    title: l10n.t("statistics.trend.activeDayAverage"),
-                    value: TrafficStatsFormatter.bytes(summary.activeDayAverageBytes),
-                    caption: l10n.t("statistics.trend.activeDayAverage.caption"),
-                    tint: FlowWatchPalette.accent
-                )
-                detailRow(
+                metricCard(
                     title: l10n.t("statistics.trend.last30Total"),
                     value: TrafficStatsFormatter.bytes(summary.last30TotalBytes),
                     caption: l10n.t("statistics.range.last30Days"),
-                    tint: FlowWatchPalette.accent
+                    tint: FlowWatchPalette.download
                 )
-                detailRow(
+                metricCard(
                     title: l10n.t("statistics.trend.last30Average"),
                     value: TrafficStatsFormatter.bytes(summary.last30AverageBytes),
                     caption: l10n.t("statistics.trend.naturalDays30"),
-                    tint: FlowWatchPalette.accent
+                    tint: FlowWatchPalette.download
                 )
-                detailRow(
-                    title: l10n.t("daily.fun.dayOverDay.title"),
-                    value: dayOverDayValue,
-                    caption: l10n.t("statistics.trend.dayOverDay.caption"),
-                    tint: dayOverDayTint
+                metricCard(
+                    title: l10n.t("statistics.trend.historyAverage"),
+                    value: TrafficStatsFormatter.bytes(summary.historyAverageBytes),
+                    caption: l10n.t("daily.section.allHistory"),
+                    tint: FlowWatchPalette.upload
                 )
-                detailRow(
-                    title: l10n.t("daily.fun.peak.title"),
-                    value: TrafficStatsFormatter.bytes(summary.last7Peak?.bytes ?? 0),
-                    caption: summary.last7Peak.map { dateText($0.date) } ?? l10n.t("daily.peak.noData"),
-                    tint: FlowWatchPalette.accent
+                metricCard(
+                    title: l10n.t("statistics.trend.activeDayAverage"),
+                    value: TrafficStatsFormatter.bytes(summary.activeDayAverageBytes),
+                    caption: l10n.t("statistics.trend.activeDayAverage.caption"),
+                    tint: FlowWatchPalette.upload
                 )
-                detailRow(
-                    title: l10n.t("statistics.trend.allTimePeak"),
-                    value: TrafficStatsFormatter.bytes(summary.allTimePeak?.bytes ?? 0),
-                    caption: summary.allTimePeak.map { dateText($0.date) } ?? l10n.t("daily.peak.noData"),
-                    tint: FlowWatchPalette.accent
-                )
+            }
+
+            statisticsPanel(title: l10n.t("statistics.trend.highlights"), systemImage: "waveform.path.ecg") {
+                VStack(spacing: 0) {
+                    detailRow(
+                        title: l10n.t("daily.fun.dayOverDay.title"),
+                        value: dayOverDayValue,
+                        caption: l10n.t("statistics.trend.dayOverDay.caption"),
+                        tint: dayOverDayTint
+                    )
+                    detailRow(
+                        title: l10n.t("daily.fun.peak.title"),
+                        value: TrafficStatsFormatter.bytes(summary.last7Peak?.bytes ?? 0),
+                        caption: summary.last7Peak.map { dateText($0.date) } ?? l10n.t("daily.peak.noData"),
+                        tint: FlowWatchPalette.accent
+                    )
+                    detailRow(
+                        title: l10n.t("statistics.trend.allTimePeak"),
+                        value: TrafficStatsFormatter.bytes(summary.allTimePeak?.bytes ?? 0),
+                        caption: summary.allTimePeak.map { dateText($0.date) } ?? l10n.t("daily.peak.noData"),
+                        tint: FlowWatchPalette.accent
+                    )
+                }
             }
         }
     }
 
     private var funSection: some View {
-        statisticsPanel(title: l10n.t("daily.fun.title"), systemImage: "sparkles") {
-            VStack(spacing: 10) {
-                HStack(spacing: 12) {
-                    Image(systemName: "person.crop.circle.badge.checkmark")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(FlowWatchPalette.accent)
-                        .frame(width: 30)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(FlowWatchPalette.accent)
+                    .frame(width: 30)
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(personaTitle)
-                            .font(.system(size: 18, weight: .semibold))
-                        Text(String(format: l10n.t("statistics.fun.personaSubtitle"), TrafficStatsFormatter.bytes(summary.last7TotalBytes)))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-                }
-                .padding(.vertical, 8)
-                .overlay(alignment: .bottom) {
-                    Divider()
-                        .opacity(0.30)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(personaTitle)
+                        .font(.system(size: 18, weight: .semibold))
+                    Text(String(format: l10n.t("statistics.fun.personaSubtitle"), TrafficStatsFormatter.bytes(summary.last7TotalBytes)))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
-                LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
-                    metricCard(
-                        title: l10n.t("daily.fun.coefficient.title"),
-                        value: TrafficStatsFormatter.ratio(upload: summary.last7Uploaded, download: summary.last7Downloaded),
-                        caption: l10n.t("daily.fun.coefficient.subtitle"),
-                        tint: FlowWatchPalette.accent
+                Spacer()
+            }
+            .padding(16)
+            .background {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [FlowWatchPalette.accent.opacity(0.13), FlowWatchPalette.upload.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                    metricCard(
-                        title: l10n.t("statistics.fun.downloadShare"),
-                        value: TrafficStatsFormatter.percent(summary.last7DownloadShare),
-                        caption: l10n.t("statistics.range.last7Days"),
-                        tint: FlowWatchPalette.download
-                    )
-                    metricCard(
-                        title: l10n.t("statistics.fun.uploadShare"),
-                        value: TrafficStatsFormatter.percent(summary.last7UploadShare),
-                        caption: l10n.t("statistics.range.last7Days"),
-                        tint: FlowWatchPalette.upload
-                    )
-                    metricCard(
-                        title: l10n.t("statistics.fun.activeRate"),
-                        value: TrafficStatsFormatter.percent(summary.activeRate),
-                        caption: l10n.t("statistics.range.allHistory"),
-                        tint: FlowWatchPalette.accent
-                    )
-                    metricCard(
-                        title: l10n.t("statistics.fun.currentStreak"),
-                        value: String(format: l10n.t("statistics.value.days"), summary.currentActiveStreak),
-                        caption: l10n.t("statistics.fun.currentStreak.caption"),
-                        tint: FlowWatchPalette.accent
-                    )
-                    metricCard(
-                        title: l10n.t("statistics.fun.longestStreak"),
-                        value: String(format: l10n.t("statistics.value.days"), summary.longestActiveStreak),
-                        caption: l10n.t("statistics.fun.longestStreak.caption"),
-                        tint: FlowWatchPalette.accent
-                    )
-                    metricCard(
-                        title: l10n.t("statistics.fun.quietDays"),
-                        value: String(format: l10n.t("statistics.value.days"), summary.last7QuietDays),
-                        caption: l10n.t("statistics.range.last7Days"),
-                        tint: .secondary
-                    )
-                    metricCard(
-                        title: l10n.t("statistics.fun.peakDownloadDate"),
-                        value: dateText(summary.peakDownloadDate?.date),
-                        caption: summary.peakDownloadDate.map { TrafficStatsFormatter.bytes($0.bytes) } ?? l10n.t("daily.peak.noData"),
-                        tint: FlowWatchPalette.download
-                    )
-                    metricCard(
-                        title: l10n.t("statistics.fun.peakUploadDate"),
-                        value: dateText(summary.peakUploadDate?.date),
-                        caption: summary.peakUploadDate.map { TrafficStatsFormatter.bytes($0.bytes) } ?? l10n.t("daily.peak.noData"),
-                        tint: FlowWatchPalette.accent
-                    )
-                    metricCard(
-                        title: l10n.t("statistics.fun.mostActiveDate"),
-                        value: dateText(summary.mostActiveDate?.date),
-                        caption: summary.mostActiveDate.map { TrafficStatsFormatter.bytes($0.bytes) } ?? l10n.t("daily.peak.noData"),
-                        tint: .orange
-                    )
-                    metricCard(
-                        title: l10n.t("statistics.fun.recentActiveDate"),
-                        value: dateText(summary.recentActiveDate),
-                        caption: l10n.t("statistics.fun.recentActive.caption"),
-                        tint: FlowWatchPalette.accent
-                    )
-                }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(FlowWatchPalette.accent.opacity(0.14), lineWidth: 1)
+            }
+
+            LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
+                metricCard(
+                    title: l10n.t("daily.fun.coefficient.title"),
+                    value: TrafficStatsFormatter.ratio(upload: summary.last7Uploaded, download: summary.last7Downloaded),
+                    caption: l10n.t("daily.fun.coefficient.subtitle"),
+                    tint: FlowWatchPalette.accent
+                )
+                metricCard(
+                    title: l10n.t("statistics.fun.downloadShare"),
+                    value: TrafficStatsFormatter.percent(summary.last7DownloadShare),
+                    caption: l10n.t("statistics.range.last7Days"),
+                    tint: FlowWatchPalette.download
+                )
+                metricCard(
+                    title: l10n.t("statistics.fun.uploadShare"),
+                    value: TrafficStatsFormatter.percent(summary.last7UploadShare),
+                    caption: l10n.t("statistics.range.last7Days"),
+                    tint: FlowWatchPalette.upload
+                )
+                metricCard(
+                    title: l10n.t("statistics.fun.activeRate"),
+                    value: TrafficStatsFormatter.percent(summary.activeRate),
+                    caption: l10n.t("statistics.range.allHistory"),
+                    tint: FlowWatchPalette.accent
+                )
+                metricCard(
+                    title: l10n.t("statistics.fun.currentStreak"),
+                    value: String(format: l10n.t("statistics.value.days"), summary.currentActiveStreak),
+                    caption: l10n.t("statistics.fun.currentStreak.caption"),
+                    tint: FlowWatchPalette.accent
+                )
+                metricCard(
+                    title: l10n.t("statistics.fun.longestStreak"),
+                    value: String(format: l10n.t("statistics.value.days"), summary.longestActiveStreak),
+                    caption: l10n.t("statistics.fun.longestStreak.caption"),
+                    tint: FlowWatchPalette.accent
+                )
+                metricCard(
+                    title: l10n.t("statistics.fun.quietDays"),
+                    value: String(format: l10n.t("statistics.value.days"), summary.last7QuietDays),
+                    caption: l10n.t("statistics.range.last7Days"),
+                    tint: .secondary
+                )
+                metricCard(
+                    title: l10n.t("statistics.fun.peakDownloadDate"),
+                    value: dateText(summary.peakDownloadDate?.date),
+                    caption: summary.peakDownloadDate.map { TrafficStatsFormatter.bytes($0.bytes) } ?? l10n.t("daily.peak.noData"),
+                    tint: FlowWatchPalette.download
+                )
+                metricCard(
+                    title: l10n.t("statistics.fun.peakUploadDate"),
+                    value: dateText(summary.peakUploadDate?.date),
+                    caption: summary.peakUploadDate.map { TrafficStatsFormatter.bytes($0.bytes) } ?? l10n.t("daily.peak.noData"),
+                    tint: FlowWatchPalette.accent
+                )
+                metricCard(
+                    title: l10n.t("statistics.fun.mostActiveDate"),
+                    value: dateText(summary.mostActiveDate?.date),
+                    caption: summary.mostActiveDate.map { TrafficStatsFormatter.bytes($0.bytes) } ?? l10n.t("daily.peak.noData"),
+                    tint: .orange
+                )
+                metricCard(
+                    title: l10n.t("statistics.fun.recentActiveDate"),
+                    value: dateText(summary.recentActiveDate),
+                    caption: l10n.t("statistics.fun.recentActive.caption"),
+                    tint: FlowWatchPalette.accent
+                )
             }
         }
     }
@@ -446,12 +601,17 @@ struct TrafficStatisticsDetailView: View {
         .flowWatchGlassPanel(cornerRadius: 12, material: .thin)
     }
 
-    private func metricCard(title: String, value: String, caption: String, tint _: Color) -> some View {
+    private func metricCard(title: String, value: String, caption: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            HStack(spacing: 7) {
+                Capsule()
+                    .fill(tint)
+                    .frame(width: 14, height: 4)
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
 
             Text(value)
                 .font(.system(size: 18, weight: .semibold, design: .monospaced))
@@ -465,16 +625,28 @@ struct TrafficStatisticsDetailView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
-        .overlay(alignment: .bottom) {
-            Divider()
-                .opacity(0.25)
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 94, alignment: .leading)
+        .background {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.thinMaterial)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(tint.opacity(0.045))
+            }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(tint.opacity(0.11), lineWidth: 1)
         }
     }
 
-    private func detailRow(title: String, value: String, caption: String, tint _: Color) -> some View {
+    private func detailRow(title: String, value: String, caption: String, tint: Color) -> some View {
         HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(tint.opacity(0.82))
+                .frame(width: 3, height: 28)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
@@ -566,6 +738,7 @@ struct TrafficStatisticsDetailView: View {
 
 private final class TrafficStatisticsDetailViewModel: ObservableObject {
     @Published private(set) var summary = TrafficStatisticsSummary.empty
+    @Published private(set) var records: [DailyTrafficRecord] = []
 
     private let storage: DailyTrafficStorage
 
@@ -575,12 +748,14 @@ private final class TrafficStatisticsDetailViewModel: ObservableObject {
     }
 
     func reload() {
-        summary = TrafficStatisticsSummary(records: storage.getAllRecords())
+        records = storage.getAllRecords()
+        summary = TrafficStatisticsSummary(records: records)
     }
 }
 
 private enum StatisticsSection: String, CaseIterable, Identifiable {
     case overview
+    case charts
     case trends
     case fun
 
@@ -590,6 +765,8 @@ private enum StatisticsSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview:
             return "statistics.section.overview"
+        case .charts:
+            return "statistics.section.charts"
         case .trends:
             return "statistics.section.trends"
         case .fun:
@@ -601,6 +778,8 @@ private enum StatisticsSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview:
             return "statistics.section.overview.subtitle"
+        case .charts:
+            return "statistics.section.charts.subtitle"
         case .trends:
             return "statistics.section.trends.subtitle"
         case .fun:
@@ -612,6 +791,8 @@ private enum StatisticsSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview:
             return "statistics.section.overview.description"
+        case .charts:
+            return "statistics.section.charts.description"
         case .trends:
             return "statistics.section.trends.description"
         case .fun:
@@ -623,6 +804,8 @@ private enum StatisticsSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview:
             return "square.grid.2x2"
+        case .charts:
+            return "chart.bar.xaxis"
         case .trends:
             return "chart.xyaxis.line"
         case .fun:
