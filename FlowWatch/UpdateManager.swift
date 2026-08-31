@@ -565,7 +565,9 @@ extension UpdateManager: SPUUpdaterDelegate {
                   let cachedLatestVersion {
             status = .updateAvailable(version: cachedLatestVersion)
         }
-        if let error {
+        if case .upToDate = status {
+            LogManager.shared.log("Sparkle update cycle finished: no update available")
+        } else if let error {
             LogManager.shared.log("Sparkle update cycle finished: \(error.localizedDescription)", level: .error)
         } else {
             LogManager.shared.log("Sparkle update cycle finished")

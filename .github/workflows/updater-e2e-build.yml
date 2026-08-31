@@ -11,6 +11,7 @@ on:
       - "FlowWatch/DailyTrafficStorage.swift"
       - "FlowWatch/LogManager.swift"
       - "FlowWatch/ProcessTrafficStorage.swift"
+      - "FlowWatch/UpdateManager.swift"
       - "scripts/build_updater_qa.sh"
 
 permissions:
