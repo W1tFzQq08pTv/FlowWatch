@@ -70,10 +70,7 @@ INFO_PLIST="$OUTPUT_APP/Contents/Info.plist"
 ditto -c -k --sequesterRsrc --keepParent "$OUTPUT_APP" "$OUTPUT_ZIP"
 (
   cd "$OUTPUT_DIR"
-  shasum -a 256 \
-    "$(basename "$OUTPUT_ZIP")" \
-    "$(basename "$OUTPUT_APP")/Contents/MacOS/$PRODUCT_NAME" \
-    > SHA256SUMS.txt
+  shasum -a 256 "$(basename "$OUTPUT_ZIP")" > SHA256SUMS.txt
 )
 
 echo "QA app generated: $OUTPUT_APP"
