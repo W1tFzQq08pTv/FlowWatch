@@ -78,13 +78,21 @@ jobs:
           import xml.etree.ElementTree as ET
 
           appcast_path = sys.argv[1]
-          enclosure = ET.parse(appcast_path).find(".//enclosure")
+          root = ET.parse(appcast_path)
+          item = root.find(".//item")
+          enclosure = root.find(".//enclosure")
+          if item is None:
+              raise SystemExit("Appcast item is missing.")
           if enclosure is None:
               raise SystemExit("Appcast enclosure is missing.")
 
           sparkle_namespace = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
-          version = enclosure.get(f"{sparkle_namespace}version")
-          short_version = enclosure.get(f"{sparkle_namespace}shortVersionString")
+          version = enclosure.get(f"{sparkle_namespace}version") or item.findtext(
+              f"{sparkle_namespace}version"
+          )
+          short_version = enclosure.get(
+              f"{sparkle_namespace}shortVersionString"
+          ) or item.findtext(f"{sparkle_namespace}shortVersionString")
           signature = enclosure.get(f"{sparkle_namespace}edSignature")
           archive_name = urllib.parse.unquote(
               urllib.parse.urlparse(enclosure.get("url", "")).path.rsplit("/", 1)[-1]
