@@ -94,17 +94,70 @@ jobs:
           fi
           zsh scripts/notarize.sh dist/FlowWatch.dmg
 
+      - name: Validate Sparkle private key
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+            echo "SPARKLE_PRIVATE_KEY is required for signed in-app updates."
+            exit 1
+          fi
+
+      - name: Fetch Sparkle tools
+        env:
+          SPARKLE_VERSION: 2.9.6
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="$RUNNER_TEMP/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          TOOLS_DIR="$RUNNER_TEMP/sparkle-tools"
+          curl -fL -o "$ARCHIVE_PATH" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir -p "$TOOLS_DIR"
+          tar -xf "$ARCHIVE_PATH" -C "$TOOLS_DIR"
+          GENERATE_APPCAST_PATH="$(find "$TOOLS_DIR" -type f -name generate_appcast | head -n1)"
+          if [[ -z "$GENERATE_APPCAST_PATH" || ! -x "$GENERATE_APPCAST_PATH" ]]; then
+            echo "Unable to locate Sparkle generate_appcast."
+            exit 1
+          fi
+          echo "SPARKLE_GENERATE_APPCAST=$GENERATE_APPCAST_PATH" >> "$GITHUB_ENV"
+
+      - name: Generate signed Sparkle appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          INPUT_DIR="$RUNNER_TEMP/flowwatch-sparkle-input"
+          KEY_FILE="$RUNNER_TEMP/flowwatch-sparkle-private.key"
+          DOWNLOAD_PREFIX="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          mkdir -p "$INPUT_DIR"
+          cp dist/FlowWatch.zip "$INPUT_DIR/FlowWatch.zip"
+          printf "%s" "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          "$SPARKLE_GENERATE_APPCAST" \
+            --ed-key-file "$KEY_FILE" \
+            --download-url-prefix "$DOWNLOAD_PREFIX/" \
+            -o dist/appcast.xml \
+            "$INPUT_DIR"
+          rm -f "$KEY_FILE"
+          grep -q "sparkle:edSignature" dist/appcast.xml
+
       - name: Verify release asset
         run: |
           set -euo pipefail
           test -s dist/FlowWatch.dmg
-          ls -lh dist/FlowWatch.dmg
+          test -s dist/FlowWatch.zip
+          test -s dist/appcast.xml
+          ls -lh dist/FlowWatch.dmg dist/FlowWatch.zip dist/appcast.xml
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v7
         with:
-          name: FlowWatch-dmg
-          path: dist/FlowWatch.dmg
+          name: FlowWatch-release
+          path: |
+            dist/FlowWatch.dmg
+            dist/FlowWatch.zip
+            dist/appcast.xml
           if-no-files-found: error
           retention-days: 7
 
@@ -115,20 +168,24 @@ jobs:
       - name: Download release artifact
         uses: actions/download-artifact@v8
         with:
-          name: FlowWatch-dmg
+          name: FlowWatch-release
           path: dist
 
       - name: Verify downloaded release asset
         run: |
           set -euo pipefail
           test -s dist/FlowWatch.dmg
-          ls -lh dist/FlowWatch.dmg
+          test -s dist/FlowWatch.zip
+          test -s dist/appcast.xml
+          ls -lh dist/FlowWatch.dmg dist/FlowWatch.zip dist/appcast.xml
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/FlowWatch.dmg
+            dist/FlowWatch.zip
+            dist/appcast.xml
           fail_on_unmatched_files: true
           generate_release_notes: true
         env:

@@ -61,7 +61,8 @@ cp -R "$APP_PATH" "$DIST_DIR/FlowWatch.app"
 
 ADHOC_SIGN="${ADHOC_SIGN:-1}"
 if [[ "$ADHOC_SIGN" == "1" ]]; then
-  /usr/bin/codesign --force --deep --sign - "$DIST_DIR/FlowWatch.app" || true
+  /usr/bin/codesign --force --deep --sign - "$DIST_DIR/FlowWatch.app"
+  /usr/bin/codesign --verify --deep --strict "$DIST_DIR/FlowWatch.app"
 fi
 
 ditto -c -k --sequesterRsrc --keepParent "$DIST_DIR/FlowWatch.app" "$DIST_DIR/FlowWatch.zip"
