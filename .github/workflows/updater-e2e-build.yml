@@ -71,9 +71,39 @@ jobs:
             -o "$QA_OUTPUT_DIR/appcast.xml" \
             "$INPUT_DIR"
           rm -f "$KEY_FILE"
-          grep -q 'sparkle:edSignature' "$QA_OUTPUT_DIR/appcast.xml"
-          grep -q 'sparkle:version="900002"' "$QA_OUTPUT_DIR/appcast.xml"
-          grep -q 'FlowWatchUpdateQA.zip' "$QA_OUTPUT_DIR/appcast.xml"
+          python3 - "$QA_OUTPUT_DIR/appcast.xml" <<'PY'
+          import json
+          import sys
+          import urllib.parse
+          import xml.etree.ElementTree as ET
+
+          appcast_path = sys.argv[1]
+          enclosure = ET.parse(appcast_path).find(".//enclosure")
+          if enclosure is None:
+              raise SystemExit("Appcast enclosure is missing.")
+
+          sparkle_namespace = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+          version = enclosure.get(f"{sparkle_namespace}version")
+          short_version = enclosure.get(f"{sparkle_namespace}shortVersionString")
+          signature = enclosure.get(f"{sparkle_namespace}edSignature")
+          archive_name = urllib.parse.unquote(
+              urllib.parse.urlparse(enclosure.get("url", "")).path.rsplit("/", 1)[-1]
+          )
+          metadata = {
+              "archive_name": archive_name,
+              "has_ed_signature": bool(signature),
+              "short_version": short_version,
+              "version": version,
+          }
+          print(json.dumps(metadata, sort_keys=True))
+          if metadata != {
+              "archive_name": "FlowWatchUpdateQA.zip",
+              "has_ed_signature": True,
+              "short_version": "99.0.2",
+              "version": "900002",
+          }:
+              raise SystemExit("Appcast metadata does not match the QA target.")
+          PY
           {
             echo "marketing_version=99.0.2"
             echo "build_version=900002"
