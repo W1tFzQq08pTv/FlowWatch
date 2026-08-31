@@ -183,6 +183,9 @@
 "daily.todayUpload" = "今日上传";
 "daily.todayDownload" = "今日下载";
 "daily.chart.last7Days" = "近 7 天趋势";
+"daily.chart.average" = "均值";
+"daily.chart.downloadAverage" = "下载均值";
+"daily.chart.uploadAverage" = "上传均值";
 "daily.section.last7days" = "近 7 天";
 "daily.section.allHistory" = "全部历史";
 "daily.section.allHistory.days" = "%d 天";
