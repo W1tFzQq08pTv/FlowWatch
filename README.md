@@ -14,7 +14,7 @@
 - 独立统计详情窗口：总览、趋势、趣味统计分区展示
 - 应用流量监控：按应用统计网络流量，支持日期范围筛选与排序
 - 自定义采样间隔与显示样式
-- 自动检查更新并显示上次/下次检查时间
+- 通过 GitHub Releases 自动检查并后台下载更新，安装和重启前始终询问，并支持稍后提醒、退出时安装和跳过普通版本
 - 可选日志输出（按天保存，保留 7 天）
 
 ## 数据与隐私
@@ -36,6 +36,10 @@
 brew tap w1tfzqq08ptv/flowwatch
 brew install --cask flowwatch
 ```
+
+通过 Homebrew Cask 安装后，后续版本也由 FlowWatch 内置更新器从 GitHub Releases 获取，无需在 App 内执行或复制 `brew upgrade` 命令。
+
+发布重要更新时，请创建附注标签，并将标签说明单独写为 `sparkle:critical`。发布工作流会将重要更新标记写入 appcast；客户端不能跳过该版本，但仍可选择稍后安装。
 
 ### 从发布页下载
 前往 GitHub Releases 下载最新的 DMG：

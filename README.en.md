@@ -14,7 +14,7 @@
 - Dedicated statistics details window with overview, trends, and fun stats sections
 - Per-app traffic monitoring with date range filters and sorting
 - Custom sampling interval and display style
-- Automatic update checks with last/next check time
+- Automatic checks and background downloads from GitHub Releases, always asking before install or relaunch, with reminders, install-on-quit, and ordinary-version skipping
 - Optional file logging (daily logs, kept for 7 days)
 
 ## Data & Privacy
@@ -36,6 +36,10 @@ The statistics details window keeps the main popup focused while providing a ful
 brew tap w1tfzqq08ptv/flowwatch
 brew install --cask flowwatch
 ```
+
+After installation through Homebrew Cask, subsequent versions are still delivered by FlowWatch's built-in updater from GitHub Releases; the app does not run or copy `brew upgrade` commands.
+
+For an important update, create an annotated tag whose tag message is exactly `sparkle:critical`. The release workflow adds critical-update metadata to the appcast; clients cannot skip that version, but may still install it later.
 
 ### Download from Releases
 Download the latest DMG from GitHub Releases:
