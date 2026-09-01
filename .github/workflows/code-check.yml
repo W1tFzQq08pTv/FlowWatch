@@ -22,15 +22,13 @@ jobs:
           xcrun swiftc --version
 
       - name: Run Swift type check
-        shell: zsh {0}
         run: |
           set -euo pipefail
-          sdk_path="$(xcrun --show-sdk-path --sdk macosx)"
-          target="$(uname -m)-apple-macos13.0"
-          swift_files=($(find FlowWatch -type f -name '*.swift' | sort))
-
-          xcrun swiftc -typecheck \
-            -module-name FlowWatch \
-            -target "$target" \
-            -sdk "$sdk_path" \
-            $swift_files
+          xcodebuild \
+            -project FlowWatch.xcodeproj \
+            -scheme FlowWatch \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build
