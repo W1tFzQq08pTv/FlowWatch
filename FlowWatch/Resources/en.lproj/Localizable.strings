@@ -286,6 +286,9 @@
 "update.check.upToDate.message" = "FlowWatch is up to date.";
 "update.check.failed.title" = "Update Check Failed";
 "update.check.failed.message" = "%@";
+"update.done" = "Done";
+"update.close" = "Close";
+"update.retry" = "Check Again";
 "update.available.title" = "Update Available %@";
 "update.available.message" = "Update now?";
 "update.available.message.dmg" = "Open the download page for the latest version?";

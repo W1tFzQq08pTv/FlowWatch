@@ -59,14 +59,18 @@ struct UpdatePromptView: View {
                 icon: "arrow.triangle.2.circlepath",
                 title: l10n.t("update.state.checking.title"),
                 detail: l10n.t("update.state.checking.detail"),
-                showsProgress: true
+                showsProgress: true,
+                actionTitle: l10n.t("common.cancel"),
+                action: updateManager.closeUpdateWindow
             )
         case .upToDate:
             centeredState(
                 icon: "checkmark.seal.fill",
                 title: l10n.t("update.check.upToDate.title"),
                 detail: l10n.t("update.check.upToDate.message"),
-                showsProgress: false
+                showsProgress: false,
+                actionTitle: l10n.t("update.done"),
+                action: updateManager.closeUpdateWindow
             )
         case .failed(let message):
             errorState(message: message)
@@ -279,7 +283,14 @@ struct UpdatePromptView: View {
         }
     }
 
-    private func centeredState(icon: String, title: String, detail: String, showsProgress: Bool) -> some View {
+    private func centeredState(
+        icon: String,
+        title: String,
+        detail: String,
+        showsProgress: Bool,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
         VStack(spacing: 14) {
             Spacer()
             Image(systemName: icon)
@@ -291,6 +302,11 @@ struct UpdatePromptView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             if showsProgress { ProgressView().controlSize(.small) }
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(UpdateActionButtonStyle(tint: .blue, isPrimary: !showsProgress))
+                    .padding(.top, 4)
+            }
             Spacer()
         }
         .padding(28)
@@ -309,10 +325,17 @@ struct UpdatePromptView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .textSelection(.enabled)
-            Button(l10n.t("menu.checkUpdate")) {
-                updateManager.checkForUpdates(userInitiated: true)
+            HStack(spacing: 10) {
+                Button(l10n.t("update.close")) {
+                    updateManager.closeUpdateWindow()
+                }
+                .buttonStyle(UpdateActionButtonStyle(tint: .blue))
+
+                Button(l10n.t("update.retry")) {
+                    updateManager.retryUpdateCheck()
+                }
+                .buttonStyle(UpdateActionButtonStyle(tint: .blue, isPrimary: true))
             }
-            .buttonStyle(UpdateActionButtonStyle(tint: .blue, isPrimary: true))
             Spacer()
         }
         .padding(28)

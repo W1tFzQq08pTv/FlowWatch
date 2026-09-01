@@ -15,7 +15,7 @@ final class FlowWatchUpdateUserDriver: NSObject, SPUUserDriver {
     }
 
     func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
-        manager?.userInitiatedUpdateCheckDidStart()
+        manager?.userInitiatedUpdateCheckDidStart(cancellation: cancellation)
     }
 
     func showUpdateFound(with appcastItem: SUAppcastItem, state: SPUUserUpdateState, reply: @escaping (SPUUserUpdateChoice) -> Void) {
