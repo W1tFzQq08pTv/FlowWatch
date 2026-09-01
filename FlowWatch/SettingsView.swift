@@ -7,7 +7,6 @@ struct SettingsView: View {
     @AppStorage("maxColorRateMbps") private var maxColorRateMbps: Double = 100
     @AppStorage("colorRatePercent") private var colorRatePercent: Double = 100
     @AppStorage("statusBarColoringEnabled") private var statusBarColoringEnabled: Bool = true
-    @AppStorage("update.autoCheckEnabled") private var autoCheckEnabled: Bool = true
     @AppStorage("perAppMonitoring.enabled") private var perAppMonitoringEnabled: Bool = false
     @AppStorage("perAppMonitoring.sampleInterval") private var perAppSampleInterval: Double = 3.0
     @AppStorage("statusBar.sampleInterval") private var sampleInterval: Double = 5.0
@@ -192,7 +191,7 @@ struct SettingsView: View {
         case .launch:
             statusBadge(title: l10n.t("settings.launchAtLogin.toggle"), value: launchAtLoginEnabled ? l10n.t("settings.state.on") : l10n.t("settings.state.off"), tint: currentSection.tint)
         case .updates:
-            statusBadge(title: l10n.t("settings.update.autoCheck"), value: autoCheckEnabled ? l10n.t("settings.state.on") : l10n.t("settings.state.off"), tint: currentSection.tint)
+            statusBadge(title: l10n.t("settings.update.autoCheck"), value: updateManager.autoCheckEnabled ? l10n.t("settings.state.on") : l10n.t("settings.state.off"), tint: currentSection.tint)
         case .logging:
             statusBadge(title: l10n.t("settings.logging.toggle"), value: loggingEnabled ? l10n.t("settings.state.on") : l10n.t("settings.state.off"), tint: currentSection.tint)
         case .perApp:
@@ -372,15 +371,14 @@ struct SettingsView: View {
         case .updates:
             settingsPanel(title: l10n.t("settings.group.updatePolicy"), systemImage: "arrow.triangle.2.circlepath") {
                 settingsRow(
-                    title: l10n.t(updateManager.usesIntegratedUpdater ? "settings.update.autoInstall" : "settings.update.autoCheck"),
-                    detail: l10n.t(updateManager.usesIntegratedUpdater ? "settings.update.autoInstallHint" : "settings.update.hint")
+                    title: l10n.t("settings.update.autoCheck"),
+                    detail: l10n.t("settings.update.autoCheckHint")
                 ) {
                     ModernSwitch(
                         isOn: Binding(
-                            get: { autoCheckEnabled },
+                            get: { updateManager.autoCheckEnabled },
                             set: { newValue in
-                                autoCheckEnabled = newValue
-                                LogManager.shared.log("Auto update check enabled: \(newValue)")
+                                updateManager.setAutomaticChecksEnabled(newValue)
                                 if newValue {
                                     NotificationCenter.default.post(name: .flowWatchCheckForUpdates, object: nil)
                                 }
@@ -389,19 +387,43 @@ struct SettingsView: View {
                         tint: currentSection.tint
                     )
                 }
-                if updateManager.usesIntegratedUpdater {
-                    Label(l10n.t("settings.update.appManagementHint"), systemImage: "lock.shield")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                rowDivider
+                settingsRow(
+                    title: l10n.t("settings.update.autoDownload"),
+                    detail: l10n.t("settings.update.autoDownloadHint")
+                ) {
+                    ModernSwitch(
+                        isOn: Binding(
+                            get: { updateManager.autoDownloadEnabled },
+                            set: { updateManager.setAutomaticDownloadsEnabled($0) }
+                        ),
+                        tint: currentSection.tint,
+                        isEnabled: updateManager.autoCheckEnabled
+                    )
                 }
+                Label(l10n.t("settings.update.appManagementHint"), systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             settingsPanel(title: l10n.t("settings.group.updateStatus"), systemImage: "clock") {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(updateInfoLines, id: \.self) { line in
-                        Text(line)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(updateInfoLines, id: \.self) { line in
+                            Text(line)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    HStack(spacing: 10) {
+                        Button(l10n.t("menu.checkUpdate")) {
+                            updateManager.checkForUpdates(userInitiated: true)
+                        }
+                        .buttonStyle(ModernActionButtonStyle(tint: currentSection.tint))
+                        Button(l10n.t("update.recheckSkipped")) {
+                            updateManager.recheckSkippedVersions()
+                        }
+                        .buttonStyle(ModernActionButtonStyle(tint: currentSection.tint))
                     }
                 }
                 .padding(.vertical, 8)
@@ -534,8 +556,27 @@ struct SettingsView: View {
 
     private var updateInfoLines: [String] {
         var lines: [String] = []
-        if updateManager.status == .checking {
+        switch updateManager.status {
+        case .checking:
             lines.append(l10n.t("menu.checkingUpdate"))
+        case .downloading(_, let progress):
+            if let progress {
+                lines.append(String(format: l10n.t("settings.update.downloading"), Int((progress * 100).rounded())))
+            } else {
+                lines.append(l10n.t("update.state.downloading.title"))
+            }
+        case .readyToInstall(let update):
+            lines.append(String(format: l10n.t("settings.update.ready"), update.version))
+        case .installOnQuit(let update):
+            lines.append(String(format: l10n.t("settings.update.installOnQuit"), update.version))
+        case .remindLater(let update, let date):
+            lines.append(String(format: l10n.t("settings.update.remindLater"), update.version, formattedUpdateDate(date)))
+        case .skipped(let update):
+            lines.append(String(format: l10n.t("settings.update.skipped"), update.version))
+        case .failed(let message):
+            lines.append(message)
+        default:
+            break
         }
         if let cachedVersion = updateManager.cachedLatestVersion {
             lines.append(String(format: l10n.t("settings.update.available"), cachedVersion))
@@ -543,6 +584,14 @@ struct SettingsView: View {
         lines.append(String(format: l10n.t("settings.update.lastCheck"), formattedLastCheck()))
         lines.append(String(format: l10n.t("settings.update.nextCheck"), formattedNextCheck()))
         return lines
+    }
+
+    private func formattedUpdateDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = l10n.locale
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 
     private var overviewGrid: some View {
@@ -987,7 +1036,7 @@ struct SettingsView: View {
     }
 
     private func formattedNextCheck() -> String {
-        if !autoCheckEnabled {
+        if !updateManager.autoCheckEnabled {
             return l10n.t("settings.update.disabled")
         }
         guard let date = updateManager.nextCheckDate else {
