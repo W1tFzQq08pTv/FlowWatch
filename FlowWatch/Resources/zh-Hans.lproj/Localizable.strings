@@ -286,6 +286,9 @@
 "update.check.upToDate.message" = "FlowWatch 已是最新版本。";
 "update.check.failed.title" = "检查更新失败";
 "update.check.failed.message" = "%@";
+"update.done" = "完成";
+"update.close" = "关闭";
+"update.retry" = "重新检查";
 "update.available.title" = "发现新版本 %@";
 "update.available.message" = "是否现在更新？";
 "update.available.message.dmg" = "是否前往下载最新版本？";

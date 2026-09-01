@@ -47,11 +47,7 @@ final class UpdateWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if UpdateManager.shared.hasPendingUserDecision {
-            UpdateManager.shared.remindLater()
-        } else {
-            sender.orderOut(nil)
-        }
+        UpdateManager.shared.closeUpdateWindow()
         return false
     }
 }

@@ -83,6 +83,8 @@ final class UpdateManager: NSObject, ObservableObject {
     private var currentUpdate: UpdateInfo?
     private var pendingUpdateReply: ((SPUUserUpdateChoice) -> Void)?
     private var pendingReadyReply: ((SPUUserUpdateChoice) -> Void)?
+    private var pendingCheckCancellation: (() -> Void)?
+    private var pendingResultAcknowledgement: (() -> Void)?
     private var expectedDownloadLength: UInt64 = 0
     private var receivedDownloadLength: UInt64 = 0
     private var lastPublishedProgress: Double = -1
@@ -107,6 +109,7 @@ final class UpdateManager: NSObject, ObservableObject {
     func checkForUpdates(userInitiated: Bool) {
         LogManager.shared.log("Check for updates (userInitiated=\(userInitiated))")
         if userInitiated, presentPendingUpdateIfAvailable() { return }
+        if userInitiated, presentPendingCheckResultIfAvailable() { return }
         checkSparkle(userInitiated: userInitiated)
     }
 
@@ -131,6 +134,7 @@ final class UpdateManager: NSObject, ObservableObject {
 
     func performCachedUpdateAction() -> Bool {
         if presentPendingUpdateIfAvailable() { return true }
+        if presentPendingCheckResultIfAvailable() { return true }
         if currentUpdate != nil {
             UpdateWindowController.shared.show()
             return true
@@ -143,11 +147,40 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 
     func showUpdateWindow() {
-        guard currentUpdate != nil else {
+        guard currentUpdate != nil || pendingResultAcknowledgement != nil || pendingCheckCancellation != nil else {
             checkForUpdates(userInitiated: true)
             return
         }
         UpdateWindowController.shared.show()
+    }
+
+    func closeUpdateWindow() {
+        if hasPendingUserDecision {
+            remindLater()
+            return
+        }
+
+        let cancellation = pendingCheckCancellation
+        pendingCheckCancellation = nil
+        let acknowledgement = consumePendingResultAcknowledgement()
+
+        if cancellation != nil {
+            status = .idle
+            userInitiatedCheck = false
+        }
+
+        UpdateWindowController.shared.close()
+        cancellation?()
+        acknowledgement?()
+    }
+
+    func retryUpdateCheck() {
+        let acknowledgement = consumePendingResultAcknowledgement()
+        UpdateWindowController.shared.close()
+        acknowledgement?()
+        DispatchQueue.main.async { [weak self] in
+            self?.checkForUpdates(userInitiated: true)
+        }
     }
 
     func installNow() {
@@ -260,7 +293,13 @@ final class UpdateManager: NSObject, ObservableObject {
         }
 
         canCheckForUpdatesObservation = updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] updater, _ in
-            DispatchQueue.main.async { self?.canCheckForUpdates = updater.canCheckForUpdates }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.canCheckForUpdates = updater.canCheckForUpdates
+                if updater.canCheckForUpdates {
+                    self.performInitialQAActionIfNeeded()
+                }
+            }
         }
         automaticChecksObservation = updater.observe(\.automaticallyChecksForUpdates, options: [.initial, .new]) { [weak self] updater, _ in
             DispatchQueue.main.async { self?.autoCheckEnabled = updater.automaticallyChecksForUpdates }
@@ -302,9 +341,20 @@ final class UpdateManager: NSObject, ObservableObject {
         return true
     }
 
+    private func presentPendingCheckResultIfAvailable() -> Bool {
+        guard pendingResultAcknowledgement != nil || pendingCheckCancellation != nil else { return false }
+        UpdateWindowController.shared.show()
+        return true
+    }
+
     private func consumePendingUpdateReply() -> ((SPUUserUpdateChoice) -> Void)? {
         defer { pendingUpdateReply = nil }
         return pendingUpdateReply
+    }
+
+    private func consumePendingResultAcknowledgement() -> (() -> Void)? {
+        defer { pendingResultAcknowledgement = nil }
+        return pendingResultAcknowledgement
     }
 
     private func loadCachedLatestVersion() {
@@ -357,8 +407,10 @@ final class UpdateManager: NSObject, ObservableObject {
         ))
     }
 
-    func userInitiatedUpdateCheckDidStart() {
+    func userInitiatedUpdateCheckDidStart(cancellation: @escaping () -> Void) {
+        pendingCheckCancellation = cancellation
         status = .checking
+        UpdateWindowController.shared.show()
     }
 
     func showUpdateFound(
@@ -366,6 +418,7 @@ final class UpdateManager: NSObject, ObservableObject {
         state: SPUUserUpdateState,
         reply: @escaping (SPUUserUpdateChoice) -> Void
     ) {
+        pendingCheckCancellation = nil
         let update = makeUpdateInfo(from: item)
         currentUpdate = update
         cachedUpdateFileURL = downloadCache.existingFileURL(
@@ -405,18 +458,28 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 
     func updateNotFound(error: Error, acknowledgement: @escaping () -> Void) {
+        pendingCheckCancellation = nil
         storeCachedLatestVersion(nil)
         currentUpdate = nil
         cachedUpdateFileURL = nil
         status = .upToDate
-        acknowledgement()
-        if userInitiatedCheck { UpdateWindowController.shared.show() }
+        if userInitiatedCheck {
+            pendingResultAcknowledgement = acknowledgement
+            UpdateWindowController.shared.show()
+        } else {
+            acknowledgement()
+        }
     }
 
     func updaterFailed(error: Error, acknowledgement: @escaping () -> Void) {
+        pendingCheckCancellation = nil
         status = .failed(message: error.localizedDescription)
-        acknowledgement()
-        if userInitiatedCheck { UpdateWindowController.shared.show() }
+        if userInitiatedCheck {
+            pendingResultAcknowledgement = acknowledgement
+            UpdateWindowController.shared.show()
+        } else {
+            acknowledgement()
+        }
     }
 
     func downloadStarted() {
@@ -478,13 +541,17 @@ final class UpdateManager: NSObject, ObservableObject {
     func dismissUpdateInstallation() {
         pendingUpdateReply = nil
         pendingReadyReply = nil
+        pendingCheckCancellation = nil
+        pendingResultAcknowledgement = nil
         immediateInstallationBlock = nil
         cacheServer.stop()
         UpdateWindowController.shared.close()
     }
 
     func showCurrentUpdateInFocus() {
-        if currentUpdate != nil { UpdateWindowController.shared.show() }
+        if currentUpdate != nil || pendingResultAcknowledgement != nil || pendingCheckCancellation != nil {
+            UpdateWindowController.shared.show()
+        }
     }
 
     private func makeUpdateInfo(from item: SUAppcastItem) -> UpdateInfo {
@@ -629,6 +696,15 @@ final class UpdateManager: NSObject, ObservableObject {
             && UserDefaults.standard.bool(forKey: "update.qa.showWindow")
     }
 
+    private func performInitialQAActionIfNeeded() {
+        guard !didPerformQAAction,
+              Bundle.main.bundleIdentifier == "com.hxd.FlowWatch.UpdateQA",
+              UserDefaults.standard.string(forKey: "update.qa.action") == "checkForUpdates" else { return }
+        didPerformQAAction = true
+        LogManager.shared.log("Perform updater QA action: checkForUpdates")
+        checkForUpdates(userInitiated: true)
+    }
+
     private func performQAActionIfNeeded() {
         guard !didPerformQAAction,
               Bundle.main.bundleIdentifier == "com.hxd.FlowWatch.UpdateQA",
@@ -721,7 +797,11 @@ extension UpdateManager: SPUUpdaterDelegate {
         userInitiatedCheck = false
         if case .checking = status { status = .idle }
         if let error {
-            LogManager.shared.log("Sparkle update cycle finished: \(error.localizedDescription)", level: .error)
+            if case .upToDate = status {
+                LogManager.shared.log("Sparkle update cycle finished without a newer version")
+            } else {
+                LogManager.shared.log("Sparkle update cycle finished: \(error.localizedDescription)", level: .error)
+            }
         }
     }
 
