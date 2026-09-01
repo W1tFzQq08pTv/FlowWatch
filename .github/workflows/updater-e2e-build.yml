@@ -12,6 +12,10 @@ on:
       - "FlowWatch/LogManager.swift"
       - "FlowWatch/ProcessTrafficStorage.swift"
       - "FlowWatch/UpdateManager.swift"
+      - "FlowWatch/FlowWatchUpdateUserDriver.swift"
+      - "FlowWatch/UpdateDownloadCache.swift"
+      - "FlowWatch/UpdatePromptView.swift"
+      - "FlowWatch/UpdateWindowController.swift"
       - "scripts/build_updater_qa.sh"
 
 permissions:

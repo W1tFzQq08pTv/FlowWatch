@@ -15,6 +15,17 @@ data = File.read(cask_path)
 
 data = data.gsub(/version\s+"[^"]+"/, "version \"#{version}\"")
 data = data.gsub(/sha256\s+"[^"]+"/, "sha256 \"#{sha256}\"")
+data = data.gsub(
+  /url\s+"https:\/\/github\.com\/W1tFzQq08pTv\/FlowWatch\/releases\/download\/v#\{version\}\/FlowWatch(?:-#\{version\})?\.dmg"/,
+  'url "https://github.com/W1tFzQq08pTv/FlowWatch/releases/download/v#{version}/FlowWatch.dmg"'
+)
+
+unless data.match?(/^  auto_updates true$/)
+  homepage_pattern = /^  homepage "[^"]+"$/
+  raise "Unable to find homepage stanza in #{cask_path}" unless data.match?(homepage_pattern)
+
+  data = data.sub(homepage_pattern) { |line| "#{line}\n  auto_updates true" }
+end
 
 File.write(cask_path, data)
 
