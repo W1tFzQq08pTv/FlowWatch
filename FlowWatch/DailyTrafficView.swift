@@ -35,6 +35,9 @@ struct DailyTrafficView: View {
                 typeLabel: l10n.t("daily.chart.type"),
                 downloadLabel: l10n.t("daily.download"),
                 uploadLabel: l10n.t("daily.upload"),
+                averageLabel: l10n.t("daily.chart.average"),
+                downloadAverageLabel: l10n.t("daily.chart.downloadAverage"),
+                uploadAverageLabel: l10n.t("daily.chart.uploadAverage"),
                 unavailableText: l10n.t("settings.requires.macos13")
             )
             .equatable()
@@ -353,6 +356,9 @@ private struct DailyTrafficChartSection: View, Equatable {
     let typeLabel: String
     let downloadLabel: String
     let uploadLabel: String
+    let averageLabel: String
+    let downloadAverageLabel: String
+    let uploadAverageLabel: String
     let unavailableText: String
 
     @State private var selectedRecord: DailyTrafficItem?
@@ -364,6 +370,9 @@ private struct DailyTrafficChartSection: View, Equatable {
             && lhs.typeLabel == rhs.typeLabel
             && lhs.downloadLabel == rhs.downloadLabel
             && lhs.uploadLabel == rhs.uploadLabel
+            && lhs.averageLabel == rhs.averageLabel
+            && lhs.downloadAverageLabel == rhs.downloadAverageLabel
+            && lhs.uploadAverageLabel == rhs.uploadAverageLabel
             && lhs.unavailableText == rhs.unavailableText
     }
 
@@ -393,6 +402,7 @@ private struct DailyTrafficChartSection: View, Equatable {
         HStack(spacing: 10) {
             legendItem(title: downloadLabel, color: FlowWatchPalette.download)
             legendItem(title: uploadLabel, color: FlowWatchPalette.upload)
+            averageLegendItem
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -404,6 +414,20 @@ private struct DailyTrafficChartSection: View, Equatable {
                 .fill(color)
                 .frame(width: 13, height: 3)
             Text(title)
+        }
+    }
+
+    private var averageLegendItem: some View {
+        HStack(spacing: 5) {
+            HStack(spacing: 2) {
+                ForEach(0..<3, id: \.self) { _ in
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.72))
+                        .frame(width: 3, height: 1.5)
+                }
+            }
+            .frame(width: 13)
+            Text(averageLabel)
         }
     }
 
@@ -420,6 +444,16 @@ private struct DailyTrafficChartSection: View, Equatable {
         records.map { max($0.downloadMB, $0.uploadMB) }.max() ?? 0
     }
 
+    private var downloadAverageMB: Double {
+        guard !records.isEmpty else { return 0 }
+        return records.reduce(0) { $0 + max($1.downloadMB, 0) } / Double(records.count)
+    }
+
+    private var uploadAverageMB: Double {
+        guard !records.isEmpty else { return 0 }
+        return records.reduce(0) { $0 + max($1.uploadMB, 0) } / Double(records.count)
+    }
+
     private var yAxisScale: TrafficChartYAxisScale {
         TrafficChartYAxisScale(maxValueMB: maxChartValue)
     }
@@ -428,8 +462,30 @@ private struct DailyTrafficChartSection: View, Equatable {
     private var chartView: some View {
         let axisScale = yAxisScale
         let todayLabel = todayChartDayLabel
+        let downloadAverage = downloadAverageMB
+        let uploadAverage = uploadAverageMB
 
         return Chart {
+            if downloadAverage > 0 {
+                RuleMark(
+                    y: .value(downloadAverageLabel, downloadAverage)
+                )
+                .foregroundStyle(FlowWatchPalette.download.opacity(0.56))
+                .lineStyle(StrokeStyle(lineWidth: 1.15, lineCap: .round, dash: [5, 4]))
+                .accessibilityLabel(downloadAverageLabel)
+                .accessibilityValue(ByteAxisFormatter.formatMB(downloadAverage))
+            }
+
+            if uploadAverage > 0 {
+                RuleMark(
+                    y: .value(uploadAverageLabel, uploadAverage)
+                )
+                .foregroundStyle(FlowWatchPalette.upload.opacity(0.56))
+                .lineStyle(StrokeStyle(lineWidth: 1.15, lineCap: .round, dash: [5, 4]))
+                .accessibilityLabel(uploadAverageLabel)
+                .accessibilityValue(ByteAxisFormatter.formatMB(uploadAverage))
+            }
+
             ForEach(records) { record in
                 LineMark(
                     x: .value(dateLabel, record.dayLabel),

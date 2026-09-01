@@ -351,7 +351,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         NotificationCenter.default.publisher(for: .flowWatchCheckForUpdates)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.updateManager.checkForUpdates(userInitiated: true)
+                self?.updateManager.startAutomaticUpdateChecks()
                 self?.refreshUpdateMenuItem()
             }
             .store(in: &cancellables)
@@ -407,7 +407,7 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func bindUpdateManager() {
-        updateManager.$status
+        Publishers.CombineLatest(updateManager.$status, updateManager.$canCheckForUpdates)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.refreshUpdateMenuItem()
@@ -1429,14 +1429,13 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         let title = updateMenuTitle(for: updateManager.status)
         updateMenuItem.attributedTitle = nil
         updateMenuItem.title = title
-        updateMenuItem.isEnabled = updateManager.canCheckForUpdates
-            && updateManager.status != .checking
-            && updateManager.status != .updating
+        updateMenuItem.isEnabled = updateManager.canActivateUpdateMenu
 
-        if case .updateAvailable = updateManager.status {
+        switch updateManager.status {
+        case .updateAvailable, .downloading, .readyToInstall, .installOnQuit, .remindLater, .installing:
             applyUpdateMenuHighlight(to: updateMenuItem, title: title)
-        } else if updateManager.cachedLatestVersion != nil {
-            applyUpdateMenuHighlight(to: updateMenuItem, title: title)
+        default:
+            break
         }
     }
 
@@ -1454,11 +1453,26 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         if case .checking = status {
             return LocalizationManager.shared.t("menu.checkingUpdate")
         }
-        if case .updating = status {
-            return LocalizationManager.shared.t("menu.updating")
-        }
         if let version = resolvedCachedVersion(for: status) {
-            return String(format: LocalizationManager.shared.t("menu.updateAvailable"), version)
+            switch status {
+            case .downloading(_, let progress):
+                if let progress {
+                    return String(format: LocalizationManager.shared.t("menu.updateDownloading"), Int((progress * 100).rounded()))
+                }
+                return LocalizationManager.shared.t("menu.updateDownloadingIndeterminate")
+            case .readyToInstall:
+                return String(format: LocalizationManager.shared.t("menu.updateReady"), version)
+            case .installOnQuit:
+                return String(format: LocalizationManager.shared.t("menu.updateOnQuit"), version)
+            case .installing:
+                return LocalizationManager.shared.t("menu.updating")
+            case .remindLater:
+                return String(format: LocalizationManager.shared.t("menu.updateDeferred"), version)
+            case .skipped:
+                return String(format: LocalizationManager.shared.t("menu.updateSkipped"), version)
+            default:
+                return String(format: LocalizationManager.shared.t("menu.updateAvailable"), version)
+            }
         }
         switch status {
         case .idle:
@@ -1467,18 +1481,21 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             return LocalizationManager.shared.t("menu.upToDate")
         case .failed:
             return LocalizationManager.shared.t("menu.updateFailed")
-        case .updateAvailable(let version):
-            return String(format: LocalizationManager.shared.t("menu.updateAvailable"), version)
-        case .checking, .updating:
+        case .updateAvailable(let update):
+            return String(format: LocalizationManager.shared.t("menu.updateAvailable"), update.version)
+        case .checking, .downloading, .readyToInstall, .installOnQuit, .remindLater, .installing, .skipped:
             return LocalizationManager.shared.t("menu.checkUpdate")
         }
     }
 
     private func resolvedCachedVersion(for status: UpdateManager.UpdateStatus) -> String? {
-        if case .updateAvailable(let version) = status {
-            return version
+        switch status {
+        case .updateAvailable(let update), .downloading(let update, _), .readyToInstall(let update),
+             .installOnQuit(let update), .remindLater(let update, _), .installing(let update), .skipped(let update):
+            return update.version
+        default:
+            return updateManager.cachedLatestVersion
         }
-        return updateManager.cachedLatestVersion
     }
     
     @objc private func openPerAppDetail() {

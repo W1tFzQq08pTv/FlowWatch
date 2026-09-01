@@ -94,17 +94,78 @@ jobs:
           fi
           zsh scripts/notarize.sh dist/FlowWatch.dmg
 
+      - name: Validate Sparkle private key
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+            echo "SPARKLE_PRIVATE_KEY is required for signed in-app updates."
+            exit 1
+          fi
+
+      - name: Fetch Sparkle tools
+        env:
+          SPARKLE_VERSION: 2.9.6
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="$RUNNER_TEMP/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          TOOLS_DIR="$RUNNER_TEMP/sparkle-tools"
+          curl -fL -o "$ARCHIVE_PATH" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir -p "$TOOLS_DIR"
+          tar -xf "$ARCHIVE_PATH" -C "$TOOLS_DIR"
+          GENERATE_APPCAST_PATH="$(find "$TOOLS_DIR" -type f -name generate_appcast | head -n1)"
+          if [[ -z "$GENERATE_APPCAST_PATH" || ! -x "$GENERATE_APPCAST_PATH" ]]; then
+            echo "Unable to locate Sparkle generate_appcast."
+            exit 1
+          fi
+          echo "SPARKLE_GENERATE_APPCAST=$GENERATE_APPCAST_PATH" >> "$GITHUB_ENV"
+
+      - name: Generate signed Sparkle appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          INPUT_DIR="$RUNNER_TEMP/flowwatch-sparkle-input"
+          KEY_FILE="$RUNNER_TEMP/flowwatch-sparkle-private.key"
+          DOWNLOAD_PREFIX="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
+          mkdir -p "$INPUT_DIR"
+          cp dist/FlowWatch.zip "$INPUT_DIR/FlowWatch.zip"
+          printf "%s" "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          APPCAST_ARGUMENTS=(
+            --ed-key-file "$KEY_FILE"
+            --download-url-prefix "$DOWNLOAD_PREFIX/"
+            --full-release-notes-url "$RELEASE_URL"
+          )
+          TAG_MESSAGE="$(git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents)')"
+          if printf '%s\n' "$TAG_MESSAGE" | grep -Eiq '^sparkle:critical[[:space:]]*$'; then
+            APPCAST_ARGUMENTS+=(--critical-update-version "")
+            echo "Generating critical Sparkle update metadata."
+          fi
+          "$SPARKLE_GENERATE_APPCAST" "${APPCAST_ARGUMENTS[@]}" \
+            -o dist/appcast.xml "$INPUT_DIR"
+          rm -f "$KEY_FILE"
+          grep -q "sparkle:edSignature" dist/appcast.xml
+
       - name: Verify release asset
         run: |
           set -euo pipefail
           test -s dist/FlowWatch.dmg
-          ls -lh dist/FlowWatch.dmg
+          test -s dist/FlowWatch.zip
+          test -s dist/appcast.xml
+          ls -lh dist/FlowWatch.dmg dist/FlowWatch.zip dist/appcast.xml
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v7
         with:
-          name: FlowWatch-dmg
-          path: dist/FlowWatch.dmg
+          name: FlowWatch-release
+          path: |
+            dist/FlowWatch.dmg
+            dist/FlowWatch.zip
+            dist/appcast.xml
           if-no-files-found: error
           retention-days: 7
 
@@ -112,23 +173,30 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
+      - name: Checkout release automation
+        uses: actions/checkout@v7
+
       - name: Download release artifact
         uses: actions/download-artifact@v8
         with:
-          name: FlowWatch-dmg
+          name: FlowWatch-release
           path: dist
 
       - name: Verify downloaded release asset
         run: |
           set -euo pipefail
           test -s dist/FlowWatch.dmg
-          ls -lh dist/FlowWatch.dmg
+          test -s dist/FlowWatch.zip
+          test -s dist/appcast.xml
+          ls -lh dist/FlowWatch.dmg dist/FlowWatch.zip dist/appcast.xml
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/FlowWatch.dmg
+            dist/FlowWatch.zip
+            dist/appcast.xml
           fail_on_unmatched_files: true
           generate_release_notes: true
         env:
@@ -147,10 +215,12 @@ jobs:
           fi
           RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/FlowWatch.dmg"
           curl -fsSL -L "$RELEASE_URL" -o "$RUNNER_TEMP/FlowWatch.dmg"
-          SHA256="$(shasum -a 256 "$RUNNER_TEMP/FlowWatch.dmg" | awk '{print $1}')"
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${HOMEBREW_TAP_REPO}.git" "$RUNNER_TEMP/homebrew-flowwatch"
+          ruby .github/scripts/update_homebrew_cask.rb \
+            "$RUNNER_TEMP/FlowWatch.dmg" \
+            "$VERSION" \
+            "$RUNNER_TEMP/homebrew-flowwatch/Casks/flowwatch.rb"
           cd "$RUNNER_TEMP/homebrew-flowwatch"
-          perl -0777 -i -pe "s/version \\\"[^\\\"]+\\\"/version \\\"${VERSION}\\\"/g; s/sha256 \\\"[^\\\"]+\\\"/sha256 \\\"${SHA256}\\\"/g; s#url \\\"https://github\\.com/W1tFzQq08pTv/FlowWatch/releases/download/v\\#\\{version\\}/FlowWatch(\\-\\#\\{version\\})?\\.dmg\\\"#url \\\"https://github.com/W1tFzQq08pTv/FlowWatch/releases/download/v\\#\\{version\\}/FlowWatch.dmg\\\"#g;" Casks/flowwatch.rb
           git add Casks/flowwatch.rb
           git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" commit -m "flowwatch ${VERSION}" || exit 0
           git push origin main

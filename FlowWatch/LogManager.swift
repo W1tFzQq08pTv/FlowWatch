@@ -128,10 +128,7 @@ final class LogManager {
     }
 
     private static func makeLogsDirectoryURL() -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return base
-            .appendingPathComponent("FlowWatch", isDirectory: true)
+        AppSupportPaths.applicationDirectory
             .appendingPathComponent("Logs", isDirectory: true)
     }
 

@@ -4,7 +4,7 @@ import SwiftUI
 
 // MARK: - Date Range
 
-enum PerAppDateRange: String, CaseIterable {
+enum PerAppDateRange: String, CaseIterable, Sendable {
     case today
     case last7Days
     case last30Days
@@ -23,27 +23,48 @@ struct PerAppTrafficItem: Identifiable {
     let totalDownloaded: UInt64
     let totalUploaded: UInt64
 
-    var totalBytes: UInt64 { totalDownloaded + totalUploaded }
+    var totalBytes: UInt64 { totalDownloaded &+ totalUploaded }
+}
+
+private struct PerAppTrafficAggregate: Sendable {
+    let bundleID: String
+    let displayName: String
+    let isApp: Bool?
+    let downloadBytes: UInt64
+    let uploadBytes: UInt64
+
+    nonisolated var totalBytes: UInt64 { downloadBytes &+ uploadBytes }
 }
 
 // MARK: - ViewModel
 
 @MainActor
 final class PerAppTrafficViewModel: ObservableObject {
-    @Published var items: [PerAppTrafficItem] = []
-    @Published var historicalItems: [PerAppTrafficItem] = []
+    @Published private(set) var items: [PerAppTrafficItem] = []
+    @Published private(set) var historicalItems: [PerAppTrafficItem] = []
+    @Published private(set) var historicalCharts = PerAppTrafficHistoricalCharts.empty
+    @Published private(set) var isLoadingHistorical = false
 
     private var cancellable: AnyCancellable?
+    private var historicalLoadGeneration = 0
+    private var iconCache: [String: NSImage] = [:]
+    private var missingIconIDs: Set<String> = []
 
     func bind(to monitor: ProcessNetworkMonitor) {
         cancellable = monitor.$appTrafficRates
             .receive(on: DispatchQueue.main)
             .sink { [weak self] rates in
-                self?.items = rates.map { rate in
-                    PerAppTrafficItem(
+                guard let self else { return }
+                self.items = rates.map { rate in
+                    if let icon = rate.icon {
+                        self.iconCache[rate.id] = icon
+                        self.missingIconIDs.remove(rate.id)
+                    }
+                    let resolvedIcon = rate.icon ?? self.iconCache[rate.id]
+                    return PerAppTrafficItem(
                         id: rate.id,
                         displayName: rate.displayName,
-                        icon: rate.icon,
+                        icon: resolvedIcon,
                         isApp: rate.isApp,
                         downloadBps: rate.downloadBps,
                         uploadBps: rate.uploadBps,
@@ -55,29 +76,47 @@ final class PerAppTrafficViewModel: ObservableObject {
     }
 
     func loadHistoricalData(range: PerAppDateRange) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let storage = ProcessTrafficStorage.shared
-            let aggregated: [(bundleID: String, displayName: String, downloadBytes: UInt64, uploadBytes: UInt64)]
+        historicalLoadGeneration += 1
+        let generation = historicalLoadGeneration
 
-            switch range {
-            case .today:
-                return
-            case .last7Days:
-                let end = Date()
-                let start = Calendar.current.date(byAdding: .day, value: -6, to: Calendar.current.startOfDay(for: end))!
-                aggregated = storage.getAggregatedRecords(from: start, to: end)
-            case .last30Days:
-                let end = Date()
-                let start = Calendar.current.date(byAdding: .day, value: -29, to: Calendar.current.startOfDay(for: end))!
-                aggregated = storage.getAggregatedRecords(from: start, to: end)
-            case .allTime:
-                aggregated = storage.getAllRecordsAggregated()
+        guard range != .today else {
+            historicalItems = []
+            historicalCharts = .empty
+            isLoadingHistorical = false
+            return
+        }
+
+        isLoadingHistorical = true
+        historicalItems = []
+        historicalCharts = .empty
+
+        let bounds = Self.dateBounds(for: range)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let storage = ProcessTrafficStorage.shared
+            let records: [AppDailyTrafficRecord]
+            if let startDate = bounds.start, let endDate = bounds.end {
+                records = storage.getRecords(from: startDate, to: endDate)
+            } else {
+                records = storage.getAllRecords()
             }
+            let aggregated = Self.aggregate(records: records)
+            let charts = PerAppTrafficSummaryBuilder.makeHistoricalCharts(
+                records: records,
+                range: range
+            )
 
             DispatchQueue.main.async {
-                self.historicalItems = aggregated.map { record -> PerAppTrafficItem in
-                    let icon = self.resolveIcon(bundleID: record.bundleID)
-                    let isApp = record.bundleID.contains(".") && !record.bundleID.hasPrefix("/")
+                guard let self, self.historicalLoadGeneration == generation else { return }
+                var remainingChartIconCount = PerAppTrafficSummaryConstants.topLimit
+                self.historicalItems = aggregated.map { record in
+                    let isApp = record.isApp ?? Self.isApplicationIdentifier(record.bundleID)
+                    let icon: NSImage?
+                    if isApp && remainingChartIconCount > 0 {
+                        icon = self.cachedIcon(bundleID: record.bundleID)
+                        remainingChartIconCount -= 1
+                    } else {
+                        icon = nil
+                    }
                     return PerAppTrafficItem(
                         id: record.bundleID,
                         displayName: record.displayName,
@@ -89,8 +128,96 @@ final class PerAppTrafficViewModel: ObservableObject {
                         totalUploaded: record.uploadBytes
                     )
                 }
+                self.historicalCharts = charts
+                self.isLoadingHistorical = false
             }
         }
+    }
+
+    nonisolated private static func aggregate(
+        records: [AppDailyTrafficRecord]
+    ) -> [PerAppTrafficAggregate] {
+        var aggregated: [String: (
+            displayName: String,
+            isApp: Bool?,
+            download: UInt64,
+            upload: UInt64
+        )] = [:]
+
+        for record in records {
+            if var current = aggregated[record.bundleID] {
+                current.displayName = record.displayName
+                current.isApp = record.isApp ?? current.isApp
+                current.download &+= record.downloadBytes
+                current.upload &+= record.uploadBytes
+                aggregated[record.bundleID] = current
+            } else {
+                aggregated[record.bundleID] = (
+                    record.displayName,
+                    record.isApp,
+                    record.downloadBytes,
+                    record.uploadBytes
+                )
+            }
+        }
+
+        return aggregated.map { bundleID, value in
+            PerAppTrafficAggregate(
+                bundleID: bundleID,
+                displayName: value.displayName,
+                isApp: value.isApp,
+                downloadBytes: value.download,
+                uploadBytes: value.upload
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.totalBytes == rhs.totalBytes {
+                return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
+            }
+            return lhs.totalBytes > rhs.totalBytes
+        }
+    }
+
+    nonisolated private static func dateBounds(
+        for range: PerAppDateRange
+    ) -> (start: Date?, end: Date?) {
+        let calendar = Calendar.current
+        let endDate = calendar.startOfDay(for: Date())
+        switch range {
+        case .today:
+            return (endDate, endDate)
+        case .last7Days:
+            return (calendar.date(byAdding: .day, value: -6, to: endDate), endDate)
+        case .last30Days:
+            return (calendar.date(byAdding: .day, value: -29, to: endDate), endDate)
+        case .allTime:
+            return (nil, nil)
+        }
+    }
+
+    nonisolated private static func isApplicationIdentifier(_ identifier: String) -> Bool {
+        if identifier.hasPrefix("/") {
+            return identifier.hasSuffix(".app")
+        }
+        return identifier.contains(".")
+    }
+
+    private func cachedIcon(bundleID: String) -> NSImage? {
+        if let cached = iconCache[bundleID] {
+            return cached
+        }
+        guard !missingIconIDs.contains(bundleID) else { return nil }
+
+        guard let icon = resolveIcon(bundleID: bundleID) else {
+            missingIconIDs.insert(bundleID)
+            return nil
+        }
+        iconCache[bundleID] = icon
+        return icon
+    }
+
+    func resolvedIcon(for item: PerAppTrafficItem) -> NSImage? {
+        item.icon ?? cachedIcon(bundleID: item.id)
     }
 
     private func resolveIcon(bundleID: String) -> NSImage? {
@@ -122,11 +249,14 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
         nil
     }
 
-    private func makeWindow() -> NSWindow {
+    private func makeWindow() -> NSWindow? {
+        guard let detailViewModel else { return nil }
         let hostingController = NSHostingController(
-            rootView: LocalizedRootView { PerAppTrafficDetailView() }
+            rootView: LocalizedRootView {
+                PerAppTrafficDetailView()
+            }
                 .environmentObject(LocalizationManager.shared)
-                .environmentObject(detailViewModel!)
+                .environmentObject(detailViewModel)
         )
         let window = NSWindow(contentViewController: hostingController)
         window.title = LocalizationManager.shared.t("perApp.detail.title")
@@ -135,7 +265,7 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
         window.titlebarAppearsTransparent = true
         window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 720, height: 520))
+        window.setContentSize(NSSize(width: 980, height: 740))
         window.delegate = self
         return window
     }
@@ -149,7 +279,14 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
 
     func show() {
         if window == nil {
-            self.window = makeWindow()
+            guard let window = makeWindow() else {
+                LogManager.shared.log(
+                    "Per-app traffic detail window opened before monitor binding",
+                    level: .warn
+                )
+                return
+            }
+            self.window = window
         }
         window?.title = LocalizationManager.shared.t("perApp.detail.title")
         NSApp.activate(ignoringOtherApps: true)
@@ -167,7 +304,7 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
 
 // MARK: - Filter & Sort
 
-enum PerAppFilterMode: String, CaseIterable {
+enum PerAppFilterMode: String, CaseIterable, Sendable {
     case all
     case appsOnly
     case processesOnly
@@ -200,18 +337,17 @@ struct PerAppTrafficDetailView: View {
         isToday ? viewModel.items : viewModel.historicalItems
     }
 
-    private var filteredItems: [PerAppTrafficItem] {
+    private func makeVisibleItems() -> [PerAppTrafficItem] {
+        let filteredItems: [PerAppTrafficItem]
         switch filterMode {
         case .all:
-            return sourceItems
+            filteredItems = sourceItems
         case .appsOnly:
-            return sourceItems.filter { $0.isApp }
+            filteredItems = sourceItems.filter { $0.isApp }
         case .processesOnly:
-            return sourceItems.filter { !$0.isApp }
+            filteredItems = sourceItems.filter { !$0.isApp }
         }
-    }
 
-    private var sortedItems: [PerAppTrafficItem] {
         let effectiveSort: PerAppSortMode
         if !isToday && (sortMode == .downloadSpeedDesc || sortMode == .uploadSpeedDesc) {
             effectiveSort = .totalDesc
@@ -219,28 +355,31 @@ struct PerAppTrafficDetailView: View {
             effectiveSort = sortMode
         }
 
-        return filteredItems.sorted { a, b in
+        return filteredItems.sorted { lhs, rhs in
             switch effectiveSort {
             case .totalDesc:
-                return a.totalBytes > b.totalBytes
+                if lhs.totalBytes != rhs.totalBytes {
+                    return lhs.totalBytes > rhs.totalBytes
+                }
             case .downloadDesc:
-                return a.totalDownloaded > b.totalDownloaded
+                if lhs.totalDownloaded != rhs.totalDownloaded {
+                    return lhs.totalDownloaded > rhs.totalDownloaded
+                }
             case .uploadDesc:
-                return a.totalUploaded > b.totalUploaded
+                if lhs.totalUploaded != rhs.totalUploaded {
+                    return lhs.totalUploaded > rhs.totalUploaded
+                }
             case .downloadSpeedDesc:
-                return a.downloadBps > b.downloadBps
+                if lhs.downloadBps != rhs.downloadBps {
+                    return lhs.downloadBps > rhs.downloadBps
+                }
             case .uploadSpeedDesc:
-                return a.uploadBps > b.uploadBps
+                if lhs.uploadBps != rhs.uploadBps {
+                    return lhs.uploadBps > rhs.uploadBps
+                }
             }
+            return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
         }
-    }
-
-    private var totalDownloaded: UInt64 {
-        sortedItems.reduce(0) { $0 &+ $1.totalDownloaded }
-    }
-
-    private var totalUploaded: UInt64 {
-        sortedItems.reduce(0) { $0 &+ $1.totalUploaded }
     }
 
     private var sortOptions: [(String, PerAppSortMode)] {
@@ -257,22 +396,36 @@ struct PerAppTrafficDetailView: View {
     }
 
     var body: some View {
+        let visibleItems = makeVisibleItems()
+        let chartSnapshot = isToday
+            ? PerAppTrafficSummaryBuilder.makeToday(items: visibleItems)
+            : viewModel.historicalCharts.snapshot(for: filterMode)
+
         VStack(spacing: 0) {
             toolbar
                 .zIndex(10)
             Divider()
-            summaryBar
+            PerAppTrafficSummaryChartsView(
+                snapshot: chartSnapshot,
+                range: dateRange,
+                isLoading: !isToday && viewModel.isLoadingHistorical
+            )
+            .equatable()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(.ultraThinMaterial)
+            .zIndex(2)
+            Divider()
+            summaryBar(items: visibleItems)
                 .zIndex(1)
             Divider()
-            content
+            content(items: visibleItems)
                 .zIndex(0)
         }
-        .frame(minWidth: 640, minHeight: 420)
+        .frame(minWidth: 820, minHeight: 640)
         .flowWatchWindowSurface()
         .onChange(of: dateRange) { newRange in
-            if newRange != .today {
-                viewModel.loadHistoricalData(range: newRange)
-            }
+            viewModel.loadHistoricalData(range: newRange)
             if newRange != .today && (sortMode == .downloadSpeedDesc || sortMode == .uploadSpeedDesc) {
                 sortMode = .totalDesc
             }
@@ -281,54 +434,73 @@ struct PerAppTrafficDetailView: View {
 
     private var toolbar: some View {
         HStack(spacing: 12) {
-            FlowWatchSegmentedControl(
-                options: PerAppDateRange.allCases.map { (dateRangeLabel($0), $0) },
-                selection: $dateRange,
-                tint: FlowWatchPalette.accent
-            )
-
-            FlowWatchSegmentedControl(
-                options: [
-                    (l10n.t("perApp.filter.all"), .all),
-                    (l10n.t("perApp.filter.apps"), .appsOnly),
-                    (l10n.t("perApp.filter.processes"), .processesOnly)
-                ],
-                selection: $filterMode,
-                tint: FlowWatchPalette.accent
-            )
-
+            dateRangeControl
+            filterControl
             Spacer(minLength: 12)
-
-            FlowWatchMenuControl(
-                options: sortOptions,
-                selection: $sortMode,
-                tint: FlowWatchPalette.accent,
-                width: 190
-            )
+            sortControl
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(.regularMaterial)
     }
 
-    private var summaryBar: some View {
-        HStack(spacing: 10) {
+    private var dateRangeControl: some View {
+        FlowWatchSegmentedControl(
+            options: PerAppDateRange.allCases.map { (dateRangeLabel($0), $0) },
+            selection: $dateRange,
+            tint: FlowWatchPalette.accent
+        )
+    }
+
+    private var filterControl: some View {
+        FlowWatchSegmentedControl(
+            options: [
+                (l10n.t("perApp.filter.all"), .all),
+                (l10n.t("perApp.filter.apps"), .appsOnly),
+                (l10n.t("perApp.filter.processes"), .processesOnly)
+            ],
+            selection: $filterMode,
+            tint: FlowWatchPalette.accent
+        )
+    }
+
+    private var sortControl: some View {
+        FlowWatchMenuControl(
+            options: sortOptions,
+            selection: $sortMode,
+            tint: FlowWatchPalette.accent,
+            width: 190
+        )
+    }
+
+    private func summaryBar(items: [PerAppTrafficItem]) -> some View {
+        let totals = items.reduce(into: (download: UInt64(0), upload: UInt64(0))) { result, item in
+            result.download &+= item.totalDownloaded
+            result.upload &+= item.totalUploaded
+        }
+        return HStack(spacing: 10) {
             summaryMetric(
                 title: l10n.t("perApp.summary.totalDownload"),
-                value: formatBytes(totalDownloaded),
+                value: formatBytes(totals.download),
                 color: FlowWatchPalette.download
             )
             summaryMetric(
                 title: l10n.t("perApp.summary.totalUpload"),
-                value: formatBytes(totalUploaded),
+                value: formatBytes(totals.upload),
                 color: FlowWatchPalette.upload
             )
 
             Spacer()
 
-            Text(String(format: l10n.t("perApp.appCount"), sortedItems.count))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if !isToday && viewModel.isLoadingHistorical {
+                ProgressView()
+                    .controlSize(.small)
+                    .help(l10n.t("perApp.chart.loading"))
+            } else {
+                Text(String(format: l10n.t("perApp.appCount"), items.count))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -353,12 +525,26 @@ struct PerAppTrafficDetailView: View {
     }
 
     @ViewBuilder
-    private var content: some View {
-        if sortedItems.isEmpty {
+    private func content(items: [PerAppTrafficItem]) -> some View {
+        if !isToday && viewModel.isLoadingHistorical {
+            loadingState
+        } else if items.isEmpty {
             emptyState
         } else {
-            tableView
+            tableView(items: items)
         }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.regular)
+            Text(l10n.t("perApp.chart.loading"))
+                .font(.body)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.ultraThinMaterial)
     }
 
     private var emptyState: some View {
@@ -374,12 +560,12 @@ struct PerAppTrafficDetailView: View {
         .background(.ultraThinMaterial)
     }
 
-    private var tableView: some View {
+    private func tableView(items: [PerAppTrafficItem]) -> some View {
         FlowWatchThinScrollView {
             LazyVStack(spacing: 0, pinnedViews: []) {
                 tableHeader
 
-                ForEach(Array(sortedItems.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     detailRow(item, isAlternate: index % 2 == 1)
                 }
             }
@@ -411,7 +597,7 @@ struct PerAppTrafficDetailView: View {
     private func detailRow(_ item: PerAppTrafficItem, isAlternate: Bool) -> some View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
-                appIcon(for: item)
+                appIcon(for: item, resolvedIcon: viewModel.resolvedIcon(for: item))
 
                 Text(item.displayName)
                     .font(.system(size: 12))
@@ -452,9 +638,9 @@ struct PerAppTrafficDetailView: View {
         )
     }
 
-    private func appIcon(for item: PerAppTrafficItem) -> some View {
+    private func appIcon(for item: PerAppTrafficItem, resolvedIcon: NSImage?) -> some View {
         Group {
-            if let icon = item.icon {
+            if let icon = resolvedIcon {
                 Image(nsImage: icon)
                     .resizable()
             } else {

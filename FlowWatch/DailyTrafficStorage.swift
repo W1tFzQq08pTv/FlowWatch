@@ -7,13 +7,13 @@
 
 import Foundation
 
-struct DailyTrafficRecord: Codable, Identifiable {
+struct DailyTrafficRecord: Codable, Identifiable, Sendable {
     let id: String // "YYYY-MM-DD"
     let date: Date
     var downloadBytes: UInt64
     var uploadBytes: UInt64
 
-    static func dateId(from date: Date) -> String {
+    nonisolated static func dateId(from date: Date) -> String {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
     }
@@ -45,8 +45,7 @@ final class DailyTrafficStorage {
     }
 
     private var filePath: URL {
-        let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let appSupport = paths[0].appendingPathComponent("FlowWatch")
+        let appSupport = AppSupportPaths.applicationDirectory
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
         return appSupport.appendingPathComponent("daily_traffic.json")
     }

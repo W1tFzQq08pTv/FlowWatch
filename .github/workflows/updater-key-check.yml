@@ -1,0 +1,92 @@
+name: Sparkle Key Check
+
+on:
+  push:
+    branches:
+      - "codex/updater-e2e-qa"
+    paths:
+      - ".github/workflows/updater-key-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  sign-test-payload:
+    runs-on: macos-latest
+    steps:
+      - name: Create deterministic test payload
+        run: |
+          set -euo pipefail
+          PAYLOAD_PATH="$RUNNER_TEMP/flowwatch-sparkle-key-check.bin"
+          printf '%s\n' 'FlowWatch Sparkle production key verification v1' > "$PAYLOAD_PATH"
+          echo "SPARKLE_TEST_PAYLOAD=$PAYLOAD_PATH" >> "$GITHUB_ENV"
+
+      - name: Fetch official Sparkle signing tool
+        env:
+          SPARKLE_VERSION: 2.9.6
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="$RUNNER_TEMP/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          TOOLS_DIR="$RUNNER_TEMP/sparkle-tools"
+          curl -fL -o "$ARCHIVE_PATH" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir -p "$TOOLS_DIR"
+          tar -xf "$ARCHIVE_PATH" -C "$TOOLS_DIR"
+          SIGN_UPDATE_PATH="$(find "$TOOLS_DIR" -type f -name sign_update | head -n1)"
+          GENERATE_KEYS_PATH="$(find "$TOOLS_DIR" -type f -name generate_keys | head -n1)"
+          if [[ -z "$SIGN_UPDATE_PATH" || ! -x "$SIGN_UPDATE_PATH" || -z "$GENERATE_KEYS_PATH" || ! -x "$GENERATE_KEYS_PATH" ]]; then
+            echo "Unable to locate Sparkle signing tools."
+            exit 1
+          fi
+          echo "SPARKLE_SIGN_UPDATE=$SIGN_UPDATE_PATH" >> "$GITHUB_ENV"
+          echo "SPARKLE_GENERATE_KEYS=$GENERATE_KEYS_PATH" >> "$GITHUB_ENV"
+
+      - name: Sign test payload with repository secret
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+            echo "SPARKLE_PRIVATE_KEY is missing."
+            exit 1
+          fi
+          SIGNATURE_PATH="$RUNNER_TEMP/flowwatch-sparkle-signature.txt"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | \
+            "$SPARKLE_SIGN_UPDATE" --ed-key-file - -p "$SPARKLE_TEST_PAYLOAD" > "$SIGNATURE_PATH"
+          if ! grep -Eq '^[A-Za-z0-9+/]{86}==$' "$SIGNATURE_PATH"; then
+            echo "Sparkle produced an invalid signature format."
+            exit 1
+          fi
+          KEY_FILE="$RUNNER_TEMP/flowwatch-sparkle-private.key"
+          PUBLIC_KEY_PATH="$RUNNER_TEMP/flowwatch-sparkle-public-key.txt"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          "$SPARKLE_GENERATE_KEYS" \
+            --account flowwatch-production-key-check \
+            -f "$KEY_FILE" | \
+            sed -n 's/.*<string>\([^<]*\)<\/string>.*/\1/p' > "$PUBLIC_KEY_PATH"
+          rm -f "$KEY_FILE"
+          if ! grep -Eq '^[A-Za-z0-9+/]{43}=$' "$PUBLIC_KEY_PATH"; then
+            echo "Sparkle produced an invalid public key format."
+            exit 1
+          fi
+          MANIFEST_PATH="$RUNNER_TEMP/flowwatch-sparkle-manifest.txt"
+          shasum -a 256 "$SPARKLE_TEST_PAYLOAD" | awk '{print $1 "  flowwatch-sparkle-key-check.bin"}' > "$MANIFEST_PATH"
+          {
+            echo "SPARKLE_TEST_SIGNATURE=$SIGNATURE_PATH"
+            echo "SPARKLE_TEST_MANIFEST=$MANIFEST_PATH"
+            echo "SPARKLE_TEST_PUBLIC_KEY=$PUBLIC_KEY_PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Upload verification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparkle-key-check-${{ github.run_id }}
+          path: |
+            ${{ env.SPARKLE_TEST_PAYLOAD }}
+            ${{ env.SPARKLE_TEST_SIGNATURE }}
+            ${{ env.SPARKLE_TEST_MANIFEST }}
+            ${{ env.SPARKLE_TEST_PUBLIC_KEY }}
+          if-no-files-found: error
+          retention-days: 1
