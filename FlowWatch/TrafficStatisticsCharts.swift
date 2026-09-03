@@ -250,14 +250,6 @@ struct StatisticsChartDashboard: View {
             locale: l10n.locale,
             template: "Md"
         )
-        let totalAreaGradient = LinearGradient(
-            colors: [
-                StatisticsChartColors.total.opacity(colorScheme == .dark ? 0.34 : 0.25),
-                StatisticsChartColors.total.opacity(0.015)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
         let downloadBarGradient = LinearGradient(
             colors: differentiateWithoutColor
                 ? [Color.primary.opacity(0.88), Color.primary.opacity(0.62)]
@@ -286,9 +278,7 @@ struct StatisticsChartDashboard: View {
                     dateLabel: dateLabel,
                     typeLabel: typeLabel,
                     downloadLabel: downloadLabel,
-                    uploadLabel: uploadLabel,
-                    totalLabel: dailyTotalLabel,
-                    areaGradient: totalAreaGradient
+                    uploadLabel: uploadLabel
                 )
             } else {
                 stackedBarMarks(
@@ -425,20 +415,8 @@ struct StatisticsChartDashboard: View {
         dateLabel: String,
         typeLabel: String,
         downloadLabel: String,
-        uploadLabel: String,
-        totalLabel: String,
-        areaGradient: LinearGradient
+        uploadLabel: String
     ) -> some ChartContent {
-        ForEach(days) { day in
-            AreaMark(
-                x: .value(dateLabel, day.date),
-                yStart: .value(totalLabel, 0.0),
-                yEnd: .value(totalLabel, day.totalBytes)
-            )
-            .foregroundStyle(areaGradient)
-            .interpolationMethod(.monotone)
-        }
-
         ForEach(days) { day in
             LineMark(
                 x: .value(dateLabel, day.date),
@@ -448,7 +426,7 @@ struct StatisticsChartDashboard: View {
             .foregroundStyle(StatisticsChartColors.download)
             .lineStyle(
                 StrokeStyle(
-                    lineWidth: 2.2,
+                    lineWidth: 1.7,
                     lineCap: .round,
                     lineJoin: .round
                 )
@@ -465,7 +443,7 @@ struct StatisticsChartDashboard: View {
             .foregroundStyle(StatisticsChartColors.upload)
             .lineStyle(
                 StrokeStyle(
-                    lineWidth: 2.0,
+                    lineWidth: 1.7,
                     lineCap: .round,
                     lineJoin: .round,
                     dash: differentiateWithoutColor ? [2, 3] : []
@@ -792,46 +770,32 @@ struct StatisticsChartDashboard: View {
         subtitle: String,
         systemImage: String
     ) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .center, spacing: 9) {
             Image(systemName: systemImage)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(StatisticsChartColors.total)
+                .foregroundStyle(.secondary)
                 .frame(width: 18, height: 18)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+
+            FlowWatchInfoTip(text: subtitle)
         }
     }
 
     private var emptyState: some View {
         VStack(spacing: 13) {
-            ZStack {
-                Circle()
-                    .fill(StatisticsChartColors.total.opacity(0.10))
-                    .frame(width: 64, height: 64)
-                Circle()
-                    .stroke(StatisticsChartColors.total.opacity(0.22), lineWidth: 1)
-                    .frame(width: 50, height: 50)
-                Image(systemName: "chart.xyaxis.line")
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(StatisticsChartColors.total)
-            }
-            .accessibilityHidden(true)
+            Image(systemName: "chart.xyaxis.line")
+                .font(.system(size: 24, weight: .regular))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
-            VStack(spacing: 5) {
+            HStack(spacing: 7) {
                 Text(l10n.t("statistics.chart.noData.title"))
                     .font(.headline)
-                Text(l10n.t("statistics.chart.noData.subtitle"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+
+                FlowWatchInfoTip(text: l10n.t("statistics.chart.noData.subtitle"))
             }
         }
         .frame(maxWidth: .infinity, minHeight: 250)
@@ -1374,48 +1338,17 @@ private enum StatisticsChartFormatter {
 }
 
 private enum StatisticsChartColors {
-    static let download = Color(red: 0.20, green: 0.55, blue: 0.98)
-    static let upload = Color(red: 1.00, green: 0.52, blue: 0.20)
-    static let total = Color(red: 0.48, green: 0.42, blue: 0.96)
+    static let download = FlowWatchPalette.download
+    static let upload = FlowWatchPalette.upload
+    static let total = FlowWatchPalette.total
 }
 
 private struct StatisticsChartCardModifier: ViewModifier {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.colorScheme) private var colorScheme
-
     func body(content: Content) -> some View {
         content
-            .background {
-                ZStack {
-                    if reduceTransparency {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color(nsColor: .controlBackgroundColor))
-                    } else {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(.thinMaterial)
-                    }
-
-                    LinearGradient(
-                        colors: [
-                            StatisticsChartColors.total.opacity(colorScheme == .dark ? 0.055 : 0.030),
-                            Color.clear
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
+            .overlay(alignment: .bottom) {
+                Divider().opacity(0.38)
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08), lineWidth: 1)
-            )
-            .shadow(
-                color: Color.black.opacity(colorScheme == .dark ? 0.11 : 0.035),
-                radius: 9,
-                x: 0,
-                y: 3
-            )
     }
 }
 

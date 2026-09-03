@@ -3,8 +3,9 @@ import SwiftUI
 
 enum FlowWatchPalette {
     static let accent = Color.accentColor
-    static let download = Color.blue
-    static let upload = Color.orange
+    static let download = Color(red: 0.20, green: 0.47, blue: 0.83)
+    static let upload = Color(red: 0.85, green: 0.34, blue: 0.44)
+    static let total = Color(red: 0.46, green: 0.36, blue: 0.85)
     static let active = Color.green
     static let destructive = Color.red
 }
@@ -13,16 +14,119 @@ enum FlowWatchGlassMaterial {
     case ultraThin
     case thin
     case regular
+}
 
-    var material: Material {
-        switch self {
-        case .ultraThin:
-            return .ultraThinMaterial
-        case .thin:
-            return .thinMaterial
-        case .regular:
-            return .regularMaterial
+struct FlowWatchInfoTip: View {
+    let text: String
+
+    @State private var isHovering = false
+    @State private var isPresented = false
+
+    var body: some View {
+        FlowWatchInfoTrackingButton(
+            onHoverChange: { hovering in
+                updateHoverState(hovering)
+            },
+            onPress: {
+                isPresented = true
+            }
+        )
+        .frame(width: 16, height: 16)
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 260, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
         }
+        .accessibilityLabel(text)
+    }
+
+    private func updateHoverState(_ hovering: Bool) {
+        isHovering = hovering
+        if hovering {
+            isPresented = true
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                if !isHovering {
+                    isPresented = false
+                }
+            }
+        }
+    }
+}
+
+private struct FlowWatchInfoTrackingButton: NSViewRepresentable {
+    let onHoverChange: (Bool) -> Void
+    let onPress: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPress: onPress)
+    }
+
+    func makeNSView(context: Context) -> FlowWatchHoverTrackingButton {
+        let button = FlowWatchHoverTrackingButton()
+        button.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.isBordered = false
+        button.focusRingType = .none
+        button.contentTintColor = .tertiaryLabelColor
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.press)
+        button.onHoverChange = onHoverChange
+        return button
+    }
+
+    func updateNSView(_ nsView: FlowWatchHoverTrackingButton, context: Context) {
+        nsView.onHoverChange = onHoverChange
+        context.coordinator.onPress = onPress
+    }
+
+    final class Coordinator: NSObject {
+        var onPress: () -> Void
+
+        init(onPress: @escaping () -> Void) {
+            self.onPress = onPress
+        }
+
+        @objc func press() {
+            onPress()
+        }
+    }
+}
+
+private final class FlowWatchHoverTrackingButton: NSButton {
+    var onHoverChange: ((Bool) -> Void)?
+    private var hoverTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onHoverChange?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onHoverChange?(false)
     }
 }
 
@@ -34,12 +138,14 @@ extension View {
         shadowOpacity: Double = 0.018
     ) -> some View {
         self
-            .background(material.material, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(
+                Color(nsColor: .controlBackgroundColor).opacity(0.62),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.primary.opacity(strokeOpacity), lineWidth: 1)
+                    .stroke(Color.primary.opacity(min(strokeOpacity, 0.08)), lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(shadowOpacity), radius: 6, x: 0, y: 1)
     }
 
     func flowWatchGlassCapsule(
@@ -48,12 +154,11 @@ extension View {
         shadowOpacity: Double = 0.015
     ) -> some View {
         self
-            .background(material.material, in: Capsule())
+            .background(Color.primary.opacity(0.035), in: Capsule())
             .overlay(
                 Capsule()
-                    .stroke(Color.primary.opacity(strokeOpacity), lineWidth: 1)
+                    .stroke(Color.primary.opacity(min(strokeOpacity, 0.07)), lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(shadowOpacity), radius: 4, x: 0, y: 1)
     }
 
     func flowWatchGlassButtonSurface(
@@ -63,25 +168,20 @@ extension View {
     ) -> some View {
         self
             .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(.thinMaterial)
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(tint.opacity(isSelected ? 0.14 : 0.0))
-                }
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(isSelected ? tint.opacity(0.11) : Color.primary.opacity(0.025))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(isSelected ? tint.opacity(0.28) : Color.primary.opacity(0.07), lineWidth: 1)
+                    .stroke(isSelected ? tint.opacity(0.34) : Color.primary.opacity(0.075), lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(isSelected ? 0.025 : 0.01), radius: isSelected ? 5 : 3, x: 0, y: 1)
     }
 
     func flowWatchWindowSurface() -> some View {
         self
             .background {
                 Rectangle()
-                    .fill(.ultraThinMaterial)
+                    .fill(Color(nsColor: .windowBackgroundColor))
                     .ignoresSafeArea()
             }
     }
@@ -89,13 +189,9 @@ extension View {
     func flowWatchMainPaneSurface() -> some View {
         self
             .background {
-                ZStack {
-                    Rectangle()
-                        .fill(.regularMaterial)
-                    Rectangle()
-                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.72))
-                }
-                .ignoresSafeArea()
+                Rectangle()
+                    .fill(Color(nsColor: .windowBackgroundColor))
+                    .ignoresSafeArea()
             }
     }
 }

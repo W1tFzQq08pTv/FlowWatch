@@ -263,7 +263,8 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
-        window.backgroundColor = .clear
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 980, height: 740))
         window.delegate = self
@@ -413,7 +414,6 @@ struct PerAppTrafficDetailView: View {
             .equatable()
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(.ultraThinMaterial)
             .zIndex(2)
             Divider()
             summaryBar(items: visibleItems)
@@ -441,7 +441,7 @@ struct PerAppTrafficDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.regularMaterial)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
     }
 
     private var dateRangeControl: some View {
@@ -504,7 +504,6 @@ struct PerAppTrafficDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.thinMaterial)
     }
 
     private func summaryMetric(title: String, value: String, color: Color) -> some View {
@@ -519,9 +518,6 @@ struct PerAppTrafficDetailView: View {
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .flowWatchGlassCapsule(material: .thin)
     }
 
     @ViewBuilder
@@ -544,7 +540,6 @@ struct PerAppTrafficDetailView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThinMaterial)
     }
 
     private var emptyState: some View {
@@ -557,7 +552,6 @@ struct PerAppTrafficDetailView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThinMaterial)
     }
 
     private func tableView(items: [PerAppTrafficItem]) -> some View {
@@ -572,7 +566,6 @@ struct PerAppTrafficDetailView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(.ultraThinMaterial)
     }
 
     private var tableHeader: some View {
@@ -633,7 +626,7 @@ struct PerAppTrafficDetailView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(
-            isAlternate ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(Color.clear),
+            isAlternate ? AnyShapeStyle(Color.primary.opacity(0.025)) : AnyShapeStyle(Color.clear),
             in: RoundedRectangle(cornerRadius: 6, style: .continuous)
         )
     }

@@ -6,8 +6,10 @@ struct UpdatePromptView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider().opacity(0.55)
+            if displayedUpdate != nil {
+                header
+                Divider().opacity(0.45)
+            }
             content
         }
         .flowWatchWindowSurface()
@@ -15,23 +17,14 @@ struct UpdatePromptView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 15) {
-            ZStack {
-                Circle()
-                    .fill(headerTint.opacity(0.13))
-                Image(systemName: headerIcon)
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(headerTint)
-            }
-            .frame(width: 54, height: 54)
+        HStack(spacing: 12) {
+            Image(systemName: headerIcon)
+                .font(.system(size: 21, weight: .semibold))
+                .foregroundStyle(headerTint)
+                .frame(width: 28)
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(headerTitle)
-                    .font(.title2.weight(.bold))
-                Text(headerSubtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            Text(headerTitle)
+                .font(.title2.weight(.semibold))
 
             Spacer()
 
@@ -42,13 +35,12 @@ struct UpdatePromptView: View {
                     } else if update.isMajorUpgrade {
                         badge(l10n.t("update.badge.major"), tint: .purple)
                     }
-                    badge("v\(update.version)", tint: .blue)
+                    badge("v\(update.version)", tint: .secondary)
                 }
             }
         }
         .padding(.horizontal, 28)
-        .padding(.top, 30)
-        .padding(.bottom, 22)
+        .padding(.vertical, 20)
     }
 
     @ViewBuilder
@@ -79,7 +71,8 @@ struct UpdatePromptView: View {
                 icon: "arrow.up.circle",
                 title: l10n.t("update.window.title"),
                 detail: l10n.t("update.state.idle.detail"),
-                showsProgress: false
+                showsProgress: false,
+                showsTitle: false
             )
         case .updateAvailable(let update),
              .readyToInstall(let update),
@@ -97,16 +90,15 @@ struct UpdatePromptView: View {
         VStack(alignment: .leading, spacing: 18) {
             versionCard(update)
 
-            assuranceStrip
-
             if update.isCritical {
                 Label(l10n.t("update.critical.message"), systemImage: "exclamationmark.shield.fill")
                     .font(.callout.weight(.medium))
                     .foregroundStyle(.red)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
+                    .padding(.vertical, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .flowWatchGlassPanel(cornerRadius: 10, material: .thin, strokeOpacity: 0.12)
+                    .overlay(alignment: .bottom) {
+                        Divider().opacity(0.35)
+                    }
             }
 
             if case .downloading(_, let progress) = updateManager.status {
@@ -144,8 +136,11 @@ struct UpdatePromptView: View {
                     .monospacedDigit()
             }
         }
-        .padding(16)
-        .flowWatchGlassPanel(cornerRadius: 12, material: .thin, strokeOpacity: 0.1)
+        .padding(.vertical, 4)
+        .padding(.bottom, 14)
+        .overlay(alignment: .bottom) {
+            Divider().opacity(0.38)
+        }
     }
 
     private func downloadProgress(_ progress: Double?) -> some View {
@@ -168,25 +163,6 @@ struct UpdatePromptView: View {
                     .progressViewStyle(.linear)
             }
         }
-    }
-
-    private var assuranceStrip: some View {
-        HStack(spacing: 0) {
-            assuranceItem(icon: "checkmark.shield", title: l10n.t("update.assurance.signature"))
-            Divider().frame(height: 28)
-            assuranceItem(icon: "arrow.down.circle", title: l10n.t("update.assurance.download"))
-            Divider().frame(height: 28)
-            assuranceItem(icon: "hand.tap", title: l10n.t("update.assurance.consent"))
-        }
-        .padding(.vertical, 10)
-        .flowWatchGlassPanel(cornerRadius: 10, material: .thin, strokeOpacity: 0.08)
-    }
-
-    private func assuranceItem(icon: String, title: String) -> some View {
-        Label(title, systemImage: icon)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -288,15 +264,18 @@ struct UpdatePromptView: View {
         title: String,
         detail: String,
         showsProgress: Bool,
+        showsTitle: Bool = true,
         actionTitle: String? = nil,
         action: (() -> Void)? = nil
     ) -> some View {
         VStack(spacing: 14) {
             Spacer()
             Image(systemName: icon)
-                .font(.system(size: 38, weight: .medium))
-                .foregroundStyle(.blue)
-            Text(title).font(.title3.weight(.semibold))
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(stateTint)
+            if showsTitle {
+                Text(title).font(.title3.weight(.semibold))
+            }
             Text(detail)
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -346,10 +325,8 @@ struct UpdatePromptView: View {
         Text(title)
             .font(.caption.weight(.semibold))
             .foregroundStyle(tint)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(tint.opacity(0.1), in: Capsule())
-            .overlay(Capsule().stroke(tint.opacity(0.2), lineWidth: 1))
+            .padding(.horizontal, 3)
+            .padding(.vertical, 2)
     }
 
     private var displayedUpdate: UpdateManager.UpdateInfo? {
@@ -393,13 +370,14 @@ struct UpdatePromptView: View {
         return l10n.t("update.window.title")
     }
 
-    private var headerSubtitle: String {
+    private var stateTint: Color {
         switch updateManager.status {
-        case .downloading: return l10n.t("update.state.downloading.detail")
-        case .readyToInstall: return l10n.t("update.state.ready.detail")
-        case .installOnQuit: return l10n.t("update.state.installOnQuit.detail")
-        case .installing: return l10n.t("update.state.preparing.detail")
-        default: return l10n.t("update.window.subtitle")
+        case .upToDate:
+            return .green
+        case .failed:
+            return .orange
+        default:
+            return .secondary
         }
     }
 
@@ -419,16 +397,18 @@ private struct UpdateActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.callout.weight(.semibold))
-            .foregroundStyle(isPrimary ? Color.white : tint)
+            .foregroundStyle(isPrimary ? Color.white : Color.primary)
             .padding(.horizontal, 15)
             .padding(.vertical, 9)
             .background(
-                isPrimary ? tint.opacity(configuration.isPressed ? 0.78 : 0.94) : tint.opacity(configuration.isPressed ? 0.13 : 0.07),
+                isPrimary
+                    ? tint.opacity(configuration.isPressed ? 0.78 : 0.94)
+                    : Color.primary.opacity(configuration.isPressed ? 0.08 : 0.035),
                 in: RoundedRectangle(cornerRadius: 9, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(tint.opacity(isPrimary ? 0.18 : 0.22), lineWidth: 1)
+                    .stroke(isPrimary ? tint.opacity(0.18) : Color.primary.opacity(0.08), lineWidth: 1)
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }

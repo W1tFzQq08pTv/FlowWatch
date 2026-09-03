@@ -3,14 +3,14 @@ import AppKit
 
 struct AboutView: View {
     @EnvironmentObject private var l10n: LocalizationManager
+    @State private var isGitHubHovered = false
 
     var body: some View {
         VStack(spacing: 14) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: 72, height: 72)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .flowWatchGlassPanel(cornerRadius: 18, material: .thin, shadowOpacity: 0.06)
+                .frame(width: 68, height: 68)
+                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
 
             VStack(spacing: 4) {
                 Text(appName)
@@ -24,9 +24,27 @@ struct AboutView: View {
             Button {
                 openGitHub()
             } label: {
-                Label(l10n.t("about.github"), systemImage: "link")
+                Image("GitHubMark")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 21, height: 21)
+                    .foregroundStyle(.primary)
+                    .frame(width: 38, height: 38)
+                    .background(
+                        Color.primary.opacity(isGitHubHovered ? 0.08 : 0.035),
+                        in: Circle()
+                    )
+                    .overlay {
+                        Circle()
+                            .stroke(Color.primary.opacity(isGitHubHovered ? 0.16 : 0.09), lineWidth: 0.8)
+                    }
             }
-            .buttonStyle(FlowWatchActionButtonStyle())
+            .buttonStyle(.plain)
+            .contentShape(Circle())
+            .onHover { isGitHubHovered = $0 }
+            .help(l10n.t("about.github"))
+            .accessibilityLabel(l10n.t("about.github"))
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 26)

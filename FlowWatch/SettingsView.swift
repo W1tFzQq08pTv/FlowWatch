@@ -98,8 +98,8 @@ struct SettingsView: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .frame(width: 238)
-        .background(.regularMaterial)
+        .frame(width: sidebarWidth)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
     }
 
     private func sidebarRow(_ section: SettingsSection) -> some View {
@@ -114,17 +114,11 @@ struct SettingsView: View {
                     .foregroundStyle(isSelected ? FlowWatchPalette.accent : Color.secondary)
                     .frame(width: 28, height: 28)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(l10n.t(section.titleKey))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.primary)
-                    if let subtitleKey = section.subtitleKey {
-                        Text(l10n.t(subtitleKey))
-                            .font(.caption2)
-                            .foregroundStyle(Color.secondary)
-                            .lineLimit(1)
-                    }
-                }
+                Text(l10n.t(section.titleKey))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
 
                 Spacer(minLength: 0)
             }
@@ -132,9 +126,17 @@ struct SettingsView: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                isSelected ? FlowWatchPalette.accent.opacity(0.12) : Color.clear,
+                isSelected ? Color.primary.opacity(0.045) : Color.clear,
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Capsule()
+                        .fill(FlowWatchPalette.accent)
+                        .frame(width: 3, height: 20)
+                        .padding(.leading, 2)
+                }
+            }
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -145,13 +147,20 @@ struct SettingsView: View {
         selectedSection ?? .general
     }
 
-    private var detailHeader: some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: currentSection.systemImage)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(FlowWatchPalette.accent)
-                .frame(width: 42, height: 42)
+    private var sidebarWidth: CGFloat {
+        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        let longestTitleWidth = SettingsSection.allCases
+            .map { section in
+                let title = l10n.t(section.titleKey) as NSString
+                return title.size(withAttributes: [.font: font]).width
+            }
+            .max() ?? 0
+        let horizontalChrome: CGFloat = 94
+        return min(max(ceil(longestTitleWidth + horizontalChrome), 176), 260)
+    }
 
+    private var detailHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(l10n.t(currentSection.titleKey))
                     .font(.system(size: 24, weight: .semibold))
@@ -163,8 +172,6 @@ struct SettingsView: View {
             }
 
             Spacer()
-
-            sectionStatusBadge
         }
         .padding(.bottom, 12)
         .overlay(alignment: .bottom) {
@@ -174,51 +181,22 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private var sectionStatusBadge: some View {
-        switch currentSection {
-        case .general:
-            statusBadge(title: l10n.t("settings.language"), value: languageLabel(l10n.language), tint: currentSection.tint)
-        case .statusBar:
-            statusBadge(title: l10n.t("settings.statusBar.interval"), value: String(format: l10n.t("settings.statusBar.interval.value"), Int(sampleInterval)), tint: currentSection.tint)
-        case .coloring:
-            statusBadge(
-                title: l10n.t("settings.coloring.toggle"),
-                value: statusBarColoringEnabled
-                    ? "\(Int(colorRatePercent.rounded()))%"
-                    : l10n.t("settings.state.off"),
-                tint: currentSection.tint
-            )
-        case .launch:
-            statusBadge(title: l10n.t("settings.launchAtLogin.toggle"), value: launchAtLoginEnabled ? l10n.t("settings.state.on") : l10n.t("settings.state.off"), tint: currentSection.tint)
-        case .updates:
-            statusBadge(title: l10n.t("settings.update.autoCheck"), value: updateManager.autoCheckEnabled ? l10n.t("settings.state.on") : l10n.t("settings.state.off"), tint: currentSection.tint)
-        case .logging:
-            statusBadge(title: l10n.t("settings.logging.toggle"), value: loggingEnabled ? l10n.t("settings.state.on") : l10n.t("settings.state.off"), tint: currentSection.tint)
-        case .perApp:
-            statusBadge(title: l10n.t("settings.perApp.toggle"), value: perAppMonitoringEnabled ? l10n.t("settings.state.on") : l10n.t("settings.state.off"), tint: currentSection.tint)
-        case .data:
-            statusBadge(title: l10n.t("settings.section.data"), value: l10n.t("settings.data.localOnly"), tint: currentSection.tint)
-        }
-    }
-
-    @ViewBuilder
     private var selectedContent: some View {
         switch currentSection {
         case .general:
-            overviewGrid
-            settingsPanel(title: l10n.t("settings.group.language"), systemImage: "globe") {
-                settingsRow(title: l10n.t("settings.language")) {
-                    optionSelector(
-                        AppLanguage.allCases.map { (languageLabel($0), $0) },
-                        selection: Binding(
-                            get: { l10n.language },
-                            set: { l10n.language = $0 }
-                        )
+            settingsPanel(title: l10n.t("settings.group.language")) {
+                optionSelector(
+                    AppLanguage.allCases.map { (languageLabel($0), $0) },
+                    selection: Binding(
+                        get: { l10n.language },
+                        set: { l10n.language = $0 }
                     )
-                }
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 6)
             }
         case .statusBar:
-            settingsPanel(title: l10n.t("settings.group.statusDisplay"), systemImage: "menubar.rectangle") {
+            settingsPanel(title: l10n.t("settings.section.displayContent")) {
                 settingsRow(title: l10n.t("settings.displayContent.label")) {
                     FlowWatchMenuControl(
                         options: FlowWatchApp.StatusBarDisplayMode.allCases.map { (l10n.t($0.titleKey), $0.rawValue) },
@@ -299,7 +277,7 @@ struct SettingsView: View {
                     .padding(.vertical, 8)
                 }
             }
-            settingsPanel(title: l10n.t("settings.group.numberUpdates"), systemImage: "timer") {
+            settingsPanel(title: l10n.t("settings.group.numberUpdates")) {
                 settingsRow(title: l10n.t("settings.statusBar.interval")) {
                     sampleIntervalPicker
                 }
@@ -312,7 +290,7 @@ struct SettingsView: View {
                 }
             }
         case .coloring:
-            settingsPanel(title: l10n.t("settings.group.colorRules"), systemImage: "paintpalette") {
+            settingsPanel(title: l10n.t("settings.group.colorRules")) {
                 settingsRow(
                     title: l10n.t("settings.coloring.toggle"),
                     detail: l10n.t("settings.coloring.toggle.desc")
@@ -365,11 +343,11 @@ struct SettingsView: View {
                 .opacity(statusBarColoringEnabled ? 1 : 0.5)
             }
         case .launch:
-            settingsPanel(title: l10n.t("settings.group.login"), systemImage: "power") {
+            settingsPanel(title: l10n.t("settings.group.login")) {
                 launchAtLoginRow
             }
         case .updates:
-            settingsPanel(title: l10n.t("settings.group.updatePolicy"), systemImage: "arrow.triangle.2.circlepath") {
+            settingsPanel(title: l10n.t("settings.group.updatePolicy")) {
                 settingsRow(
                     title: l10n.t("settings.update.autoCheck"),
                     detail: l10n.t("settings.update.autoCheckHint")
@@ -401,12 +379,12 @@ struct SettingsView: View {
                         isEnabled: updateManager.autoCheckEnabled
                     )
                 }
-                Label(l10n.t("settings.update.appManagementHint"), systemImage: "lock.shield")
+                Text(l10n.t("settings.update.appManagementHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            settingsPanel(title: l10n.t("settings.group.updateStatus"), systemImage: "clock") {
+            settingsPanel(title: l10n.t("settings.group.updateStatus")) {
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(updateInfoLines, id: \.self) { line in
@@ -429,7 +407,7 @@ struct SettingsView: View {
                 .padding(.vertical, 8)
             }
         case .logging:
-            settingsPanel(title: l10n.t("settings.group.logs"), systemImage: "doc.text") {
+            settingsPanel(title: l10n.t("settings.group.logs")) {
                 settingsRow(
                     title: l10n.t("settings.logging.toggle"),
                     detail: l10n.t("settings.logging.hint")
@@ -443,7 +421,7 @@ struct SettingsView: View {
                     ), tint: currentSection.tint)
                 }
             }
-            settingsPanel(title: l10n.t("settings.group.logsLocation"), systemImage: "folder") {
+            settingsPanel(title: l10n.t("settings.group.logsLocation")) {
                 settingsRow(
                     title: l10n.t("settings.logging.openFolder"),
                     detail: String(format: l10n.t("settings.logging.path"), displayPath(LogManager.shared.logsDirectoryPath))
@@ -457,7 +435,7 @@ struct SettingsView: View {
                 }
             }
         case .perApp:
-            settingsPanel(title: l10n.t("settings.group.perAppCapture"), systemImage: "app.badge") {
+            settingsPanel(title: l10n.t("settings.group.perAppCapture")) {
                 settingsRow(
                     title: l10n.t("settings.perApp.toggle"),
                     detail: l10n.t("settings.perApp.desc")
@@ -477,7 +455,7 @@ struct SettingsView: View {
                 }
             }
         case .data:
-            settingsPanel(title: l10n.t("settings.group.dataActions"), systemImage: "internaldrive") {
+            settingsPanel(title: l10n.t("settings.group.dataActions")) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(l10n.t("settings.data.desc"))
                         .font(.caption)
@@ -594,75 +572,12 @@ struct SettingsView: View {
         return formatter.string(from: date)
     }
 
-    private var overviewGrid: some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 138), spacing: 10)],
-            alignment: .leading,
-            spacing: 10
-        ) {
-            overviewTile(
-                title: l10n.t("settings.overview.display"),
-                value: currentDisplayModeLabel,
-                systemImage: "menubar.rectangle",
-                tint: SettingsSection.statusBar.tint
-            )
-            overviewTile(
-                title: l10n.t("settings.overview.sample"),
-                value: String(format: l10n.t("settings.statusBar.interval.value"), Int(sampleInterval)),
-                systemImage: "timer",
-                tint: SettingsSection.statusBar.tint
-            )
-            overviewTile(
-                title: l10n.t("settings.overview.transition"),
-                value: smoothTransition ? l10n.t("settings.state.on") : l10n.t("settings.state.off"),
-                systemImage: "waveform.path.ecg",
-                tint: SettingsSection.coloring.tint
-            )
-            overviewTile(
-                title: l10n.t("settings.overview.perApp"),
-                value: perAppMonitoringEnabled ? l10n.t("settings.state.on") : l10n.t("settings.state.off"),
-                systemImage: "app.badge",
-                tint: SettingsSection.perApp.tint
-            )
-        }
-    }
-
-    private func overviewTile(title: String, value: String, systemImage: String, tint: Color) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-        }
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottom) {
-            Divider()
-                .opacity(0.25)
-        }
-    }
-
     private func settingsPanel<Content: View>(
         title: String,
-        systemImage: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(currentSection.tint)
-                    .frame(width: 20)
+            HStack {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
@@ -673,10 +588,11 @@ struct SettingsView: View {
 
             content()
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .flowWatchGlassPanel(cornerRadius: 12, material: .thin)
+        .overlay(alignment: .bottom) {
+            Divider().opacity(0.38)
+        }
     }
 
     private func settingsRow<Control: View>(
@@ -704,17 +620,6 @@ struct SettingsView: View {
     private var rowDivider: some View {
         Divider()
             .opacity(0.30)
-    }
-
-    private func statusBadge(title: String, value: String, tint: Color) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
-        }
     }
 
     private var colorPreviewStrip: some View {
@@ -771,10 +676,6 @@ struct SettingsView: View {
 
     private var currentStatusBarDisplayMode: FlowWatchApp.StatusBarDisplayMode {
         FlowWatchApp.StatusBarDisplayMode(rawValue: statusBarDisplayModeRaw) ?? .speed
-    }
-
-    private var currentDisplayModeLabel: String {
-        l10n.t(currentStatusBarDisplayMode.titleKey)
     }
 
     private var mathCurveLoaderOptions: [(String, String)] {
@@ -1068,12 +969,8 @@ private struct ModernSwitch: View {
         } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
                 Capsule()
-                    .fill(.thinMaterial)
+                    .fill(isOn ? tint : Color.secondary.opacity(0.28))
                     .frame(width: 46, height: 26)
-                    .overlay(
-                        Capsule()
-                            .fill(isOn ? tint.opacity(0.62) : Color.secondary.opacity(0.12))
-                    )
 
                 Circle()
                     .fill(Color(nsColor: .controlBackgroundColor))
@@ -1087,7 +984,7 @@ private struct ModernSwitch: View {
             }
             .overlay(
                 Capsule()
-                    .stroke(isOn ? tint.opacity(0.58) : Color.secondary.opacity(0.14), lineWidth: 1)
+                    .stroke(isOn ? tint : Color.secondary.opacity(0.38), lineWidth: 1)
             )
             .opacity(isEnabled ? 1 : 0.45)
         }

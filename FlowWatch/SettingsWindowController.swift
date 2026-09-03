@@ -24,7 +24,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .visible
-        window.backgroundColor = .clear
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 900, height: 600))
         window.delegate = self
