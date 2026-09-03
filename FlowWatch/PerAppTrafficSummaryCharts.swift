@@ -362,7 +362,7 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
                 title: l10n.t("perApp.summaryCharts.composition.title"),
                 subtitle: l10n.t("perApp.summaryCharts.composition.subtitle"),
                 systemImage: "chart.pie.fill",
-                badge: l10n.t("perApp.summaryCharts.top5")
+                badge: nil
             )
 
             HStack(spacing: 16) {
@@ -480,7 +480,7 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
                         .foregroundStyle(PerAppTrafficSummaryPalette.color(at: series.colorIndex))
                         .lineStyle(
                             StrokeStyle(
-                                lineWidth: series.isOther ? 1.65 : 2.1,
+                                lineWidth: series.isOther ? 1.2 : 1.6,
                                 lineCap: .round,
                                 lineJoin: .round,
                                 dash: series.isOther ? [5, 4] : []
@@ -539,11 +539,6 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
                     }
                 }
             }
-            .chartPlotStyle { plotArea in
-                plotArea
-                    .background(Color.primary.opacity(0.018))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
             .frame(minHeight: 154)
         }
         .padding(14)
@@ -564,9 +559,8 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: systemImage)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(FlowWatchPalette.accent)
-                .frame(width: 26, height: 26)
-                .background(FlowWatchPalette.accent.opacity(0.10), in: Circle())
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -582,10 +576,7 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
             if let badge {
                 Text(badge)
                     .font(.system(size: 8.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(FlowWatchPalette.accent)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(FlowWatchPalette.accent.opacity(0.09), in: Capsule())
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -661,7 +652,7 @@ private enum PerAppTrafficSummaryPalette {
         let colors: [Color] = [
             FlowWatchPalette.download,
             FlowWatchPalette.upload,
-            Color(red: 0.51, green: 0.42, blue: 0.96),
+            FlowWatchPalette.total,
             Color(red: 0.12, green: 0.72, blue: 0.65),
             Color(red: 0.93, green: 0.32, blue: 0.56),
             Color.secondary.opacity(0.58)
@@ -706,42 +697,11 @@ private enum PerAppSummaryChartFormatter {
 private struct PerAppSummaryChartCardModifier: ViewModifier {
     let accent: Color
 
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.colorScheme) private var colorScheme
-
     func body(content: Content) -> some View {
         content
-            .background {
-                ZStack {
-                    if reduceTransparency {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color(nsColor: .controlBackgroundColor))
-                    } else {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(.thinMaterial)
-                    }
-
-                    LinearGradient(
-                        colors: [
-                            accent.opacity(colorScheme == .dark ? 0.055 : 0.030),
-                            Color.clear
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
+            .overlay(alignment: .bottom) {
+                Divider().opacity(0.38)
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08), lineWidth: 1)
-            )
-            .shadow(
-                color: Color.black.opacity(colorScheme == .dark ? 0.10 : 0.032),
-                radius: 9,
-                x: 0,
-                y: 3
-            )
     }
 }
 
