@@ -1,5 +1,4 @@
 "settings.title" = "FlowWatch 设置";
-"settings.subtitle" = "状态栏显示、上色与启动选项";
 "settings.subtitle.general" = "语言与基础偏好";
 "settings.subtitle.statusBar" = "状态栏内容、采样和数字过渡";
 "settings.subtitle.coloring" = "状态栏上色开关、速率阈值和强度";
@@ -8,7 +7,6 @@
 "settings.subtitle.logging" = "本地日志开关与位置";
 "settings.subtitle.perApp" = "按应用采集流量数据";
 "settings.subtitle.data" = "重置或清空本地统计";
-"settings.sidebar.subtitle" = "偏好设置";
 "settings.group.language" = "界面语言";
 "settings.group.statusDisplay" = "状态栏显示";
 "settings.group.numberUpdates" = "刷新与动效";
@@ -22,11 +20,6 @@
 "settings.group.dataActions" = "数据管理";
 "settings.state.on" = "开启";
 "settings.state.off" = "关闭";
-"settings.data.localOnly" = "本机数据";
-"settings.overview.display" = "状态栏";
-"settings.overview.sample" = "采样间隔";
-"settings.overview.transition" = "数值过渡";
-"settings.overview.perApp" = "应用流量";
 "settings.color.preview.low" = "低速";
 "settings.color.preview.medium" = "中速";
 "settings.color.preview.high" = "高速";
@@ -74,7 +67,7 @@
 "settings.update.autoInstall" = "自动检查并安装更新";
 "settings.update.autoInstallHint" = "每天自动检查，后台下载并在系统允许时完成替换和重启。";
 "settings.update.autoCheck" = "自动检查更新";
-"settings.update.autoCheckHint" = "每天从 GitHub Releases 检查新版本，也可以随时手动检查。";
+"settings.update.autoCheckHint" = "每天自动检查新版本，也可以随时手动检查。";
 "settings.update.autoDownload" = "自动下载更新";
 "settings.update.autoDownloadHint" = "发现新版本后在后台下载；下载完成后仍会询问是否安装。";
 "settings.update.appManagementHint" = "未签名版本首次更新时，macOS 可能要求在“隐私与安全性 → App 管理”中允许 FlowWatch 更新应用。";
@@ -100,21 +93,15 @@
 "settings.data.desc" = "“重置今日”只影响今天；“清空历史”会删除所有天的数据记录。";
 
 "statistics.title" = "统计详情";
-"statistics.subtitle" = "历史流量、趋势和轻量趣味统计";
-"statistics.sidebar.subtitle" = "统计面板";
 "statistics.empty.title" = "暂无历史数据";
 "statistics.empty.subtitle" = "开始使用后，这里会显示每天累计的下载和上传。";
 "statistics.section.overview" = "总览";
-"statistics.section.overview.subtitle" = "累计与天数";
 "statistics.section.overview.description" = "查看全部历史、今日、昨日和记录天数。";
 "statistics.section.charts" = "图表";
-"statistics.section.charts.subtitle" = "走势与构成";
 "statistics.section.charts.description" = "用交互式图表查看每日走势、流向构成与周内节奏。";
 "statistics.section.trends" = "趋势";
-"statistics.section.trends.subtitle" = "日均与峰值";
 "statistics.section.trends.description" = "查看近 7 天、近 30 天、日均变化和峰值日期。";
 "statistics.section.fun" = "趣味统计";
-"statistics.section.fun.subtitle" = "称号与习惯";
 "statistics.section.fun.description" = "查看称号、上传下载占比、连续活跃和最活跃日期。";
 "statistics.range.allHistory" = "全部历史";
 "statistics.range.last7Days" = "近 7 天";
@@ -258,10 +245,10 @@
 "common.clear" = "清空";
 "common.quit" = "退出";
 
-"menu.settings" = "设置…";
+"menu.settings" = "设置";
 "menu.about" = "关于 FlowWatch";
-"menu.statisticsDetail" = "统计详情…";
-"menu.checkUpdate" = "检查更新…";
+"menu.statisticsDetail" = "统计详情";
+"menu.checkUpdate" = "检查更新";
 "menu.checkingUpdate" = "正在检查更新…";
 "menu.updating" = "正在更新…";
 "menu.updateDownloading" = "正在下载更新… %d%%";
@@ -298,13 +285,12 @@
 "update.upgrade.success.message" = "已完成更新，请重新启动应用。";
 "update.upgrade.failed.title" = "更新失败";
 "update.upgrade.failed.message" = "%@";
-"update.dmg.unavailable" = "当前版本未启用自动更新，请前往 GitHub Releases 下载最新版本。";
+"update.dmg.unavailable" = "当前版本未启用自动更新，请前往发布页下载最新版本。";
 "update.openDownload" = "前往下载";
-"update.github.invalidRelease" = "无法解析 GitHub Release 信息，请稍后再试。";
-"update.github.rateLimited" = "GitHub 请求过于频繁，请稍后再试。";
+"update.github.invalidRelease" = "无法读取版本发布信息，请稍后再试。";
+"update.github.rateLimited" = "更新服务请求过于频繁，请稍后再试。";
 "update.network.error" = "网络连接异常，请稍后再试。";
 "update.window.title" = "FlowWatch 更新";
-"update.window.subtitle" = "通过 GitHub Releases 安全获取新版本";
 "update.badge.critical" = "重要更新";
 "update.badge.major" = "主要版本";
 "update.version.current" = "当前版本";
@@ -317,9 +303,6 @@
 "update.skipVersion" = "跳过此版本";
 "update.recheckSkipped" = "重新检查已跳过版本";
 "update.installConsentHint" = "未经确认不会安装或重启";
-"update.assurance.signature" = "安装前签名验证";
-"update.assurance.download" = "后台低干扰下载";
-"update.assurance.consent" = "确认后才安装";
 "update.critical.message" = "此版本包含重要修复，不能跳过；你仍可选择稍后安装。";
 "update.notification.title" = "FlowWatch %@ 可更新";
 "update.notification.critical.title" = "FlowWatch %@ 重要更新";
@@ -327,7 +310,7 @@
 "update.notification.ready.body" = "更新已在后台下载完成，打开 FlowWatch 选择何时安装。";
 "update.state.idle.detail" = "点击菜单栏中的“检查更新”获取最新版本。";
 "update.state.checking.title" = "正在检查更新";
-"update.state.checking.detail" = "正在连接 GitHub Releases…";
+"update.state.checking.detail" = "正在连接更新服务…";
 "update.state.downloading.title" = "正在后台下载";
 "update.state.downloading.detail" = "你可以继续使用 FlowWatch，下载不会阻塞流量监控。";
 "update.state.ready.detail" = "更新已下载，选择合适的时间安装。";
@@ -350,7 +333,7 @@
 "perApp.noData" = "暂无应用流量数据";
 "perApp.appCount" = "%d 项";
 "perApp.detail.title" = "应用流量";
-"menu.perAppTraffic" = "应用流量…";
+"menu.perAppTraffic" = "应用流量";
 "perApp.sort.total" = "流量最多在前";
 "perApp.sort.download" = "下载最多在前";
 "perApp.sort.upload" = "上传最多在前";
@@ -373,7 +356,6 @@
 "perApp.summaryCharts.composition.subtitle" = "按累计用量展示主要项目";
 "perApp.summaryCharts.trend.title" = "用量趋势";
 "perApp.summaryCharts.trend.subtitle" = "Top 5 与其余流量的平滑时间走势";
-"perApp.summaryCharts.top5" = "Top 5 + 其余";
 "perApp.summaryCharts.others" = "其余";
 "perApp.summaryCharts.bucketDays" = "每点 %d 天";
 "perApp.summaryCharts.time" = "时间";

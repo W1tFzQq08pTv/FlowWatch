@@ -1,5 +1,4 @@
 "settings.title" = "Settings";
-"settings.subtitle" = "Menu bar display, coloring, and launch options";
 "settings.subtitle.general" = "Language and basic preferences";
 "settings.subtitle.statusBar" = "Menu bar content, sampling, and number transitions";
 "settings.subtitle.coloring" = "Menu bar coloring toggle, speed thresholds, and intensity";
@@ -8,7 +7,6 @@
 "settings.subtitle.logging" = "Local logging and log location";
 "settings.subtitle.perApp" = "Collect traffic by application";
 "settings.subtitle.data" = "Reset or clear local statistics";
-"settings.sidebar.subtitle" = "Preferences";
 "settings.group.language" = "Interface Language";
 "settings.group.statusDisplay" = "Menu Bar Display";
 "settings.group.numberUpdates" = "Refresh and Motion";
@@ -22,11 +20,6 @@
 "settings.group.dataActions" = "Data Management";
 "settings.state.on" = "On";
 "settings.state.off" = "Off";
-"settings.data.localOnly" = "Local Data";
-"settings.overview.display" = "Menu Bar";
-"settings.overview.sample" = "Sample Interval";
-"settings.overview.transition" = "Number Transition";
-"settings.overview.perApp" = "Per-App Traffic";
 "settings.color.preview.low" = "Low";
 "settings.color.preview.medium" = "Medium";
 "settings.color.preview.high" = "High";
@@ -74,7 +67,7 @@
 "settings.update.autoInstall" = "Automatically check and install updates";
 "settings.update.autoInstallHint" = "Checks daily, downloads in the background, and replaces and relaunches the app when macOS permits it.";
 "settings.update.autoCheck" = "Automatically check for updates";
-"settings.update.autoCheckHint" = "Check GitHub Releases daily, with manual checks available at any time.";
+"settings.update.autoCheckHint" = "Check for new versions daily, with manual checks available at any time.";
 "settings.update.autoDownload" = "Automatically download updates";
 "settings.update.autoDownloadHint" = "Download new versions in the background, then ask before installation.";
 "settings.update.appManagementHint" = "On the first update of an unsigned build, macOS may ask you to allow FlowWatch under Privacy & Security → App Management.";
@@ -100,21 +93,15 @@
 "settings.data.desc" = "\"Reset today\" only affects today; \"Clear all history\" deletes all recorded days.";
 
 "statistics.title" = "Statistics Details";
-"statistics.subtitle" = "History, trends, and lightweight fun stats";
-"statistics.sidebar.subtitle" = "Stats panel";
 "statistics.empty.title" = "No history yet";
 "statistics.empty.subtitle" = "Daily download and upload totals will appear here once FlowWatch records traffic.";
 "statistics.section.overview" = "Overview";
-"statistics.section.overview.subtitle" = "Totals and days";
 "statistics.section.overview.description" = "Review all-time totals, today, yesterday, and recorded days.";
 "statistics.section.charts" = "Charts";
-"statistics.section.charts.subtitle" = "Flow and mix";
 "statistics.section.charts.description" = "Explore daily movement, traffic composition, and weekday rhythm in interactive charts.";
 "statistics.section.trends" = "Trends";
-"statistics.section.trends.subtitle" = "Averages and peaks";
 "statistics.section.trends.description" = "Review 7-day and 30-day totals, averages, changes, and peak days.";
 "statistics.section.fun" = "Fun stats";
-"statistics.section.fun.subtitle" = "Persona and habits";
 "statistics.section.fun.description" = "Review persona, upload/download share, active streaks, and most active dates.";
 "statistics.range.allHistory" = "All history";
 "statistics.range.last7Days" = "Last 7 days";
@@ -258,11 +245,11 @@
 "common.clear" = "Clear";
 "common.quit" = "Quit";
 
-"menu.settings" = "Settings…";
+"menu.settings" = "Settings";
 "menu.about" = "About FlowWatch";
-"menu.statisticsDetail" = "Statistics Details…";
+"menu.statisticsDetail" = "Statistics Details";
 "about.github" = "GitHub repository";
-"menu.checkUpdate" = "Check for Updates…";
+"menu.checkUpdate" = "Check for Updates";
 "menu.checkingUpdate" = "Checking for Updates…";
 "menu.updating" = "Updating…";
 "menu.updateDownloading" = "Downloading update… %d%%";
@@ -298,13 +285,12 @@
 "update.upgrade.success.message" = "Update finished. Please relaunch the app.";
 "update.upgrade.failed.title" = "Update Failed";
 "update.upgrade.failed.message" = "%@";
-"update.dmg.unavailable" = "Auto update is not available. Download the latest version from GitHub Releases.";
+"update.dmg.unavailable" = "Auto update is not available. Download the latest version from the release page.";
 "update.openDownload" = "Open Download Page";
-"update.github.invalidRelease" = "Unable to parse GitHub release information. Please try again later.";
-"update.github.rateLimited" = "GitHub rate limit reached. Please try again later.";
+"update.github.invalidRelease" = "Unable to read release information. Please try again later.";
+"update.github.rateLimited" = "The update service is receiving too many requests. Please try again later.";
 "update.network.error" = "Network error. Please try again later.";
 "update.window.title" = "FlowWatch Update";
-"update.window.subtitle" = "Updates delivered securely through GitHub Releases";
 "update.badge.critical" = "Important";
 "update.badge.major" = "Major";
 "update.version.current" = "Current version";
@@ -317,9 +303,6 @@
 "update.skipVersion" = "Skip This Version";
 "update.recheckSkipped" = "Recheck Skipped Versions";
 "update.installConsentHint" = "FlowWatch never installs or restarts without confirmation";
-"update.assurance.signature" = "Verified before install";
-"update.assurance.download" = "Low-impact download";
-"update.assurance.consent" = "Install only with consent";
 "update.critical.message" = "This version contains important fixes and cannot be skipped. You can still install it later.";
 "update.notification.title" = "FlowWatch %@ is available";
 "update.notification.critical.title" = "Important FlowWatch %@ update";
@@ -327,7 +310,7 @@
 "update.notification.ready.body" = "The update finished downloading. Open FlowWatch to choose when to install it.";
 "update.state.idle.detail" = "Choose Check for Updates from the menu bar to fetch the latest version.";
 "update.state.checking.title" = "Checking for Updates";
-"update.state.checking.detail" = "Connecting to GitHub Releases…";
+"update.state.checking.detail" = "Connecting to the update service…";
 "update.state.downloading.title" = "Downloading in the Background";
 "update.state.downloading.detail" = "Keep using FlowWatch while the update downloads without blocking traffic monitoring.";
 "update.state.ready.detail" = "The update is downloaded. Choose a convenient time to install it.";
@@ -350,7 +333,7 @@
 "perApp.noData" = "No per-app data yet";
 "perApp.appCount" = "%d items";
 "perApp.detail.title" = "Per-App Traffic";
-"menu.perAppTraffic" = "Per-App Traffic…";
+"menu.perAppTraffic" = "Per-App Traffic";
 "perApp.sort.total" = "Most Traffic First";
 "perApp.sort.download" = "Most Downloaded First";
 "perApp.sort.upload" = "Most Uploaded First";
@@ -373,7 +356,6 @@
 "perApp.summaryCharts.composition.subtitle" = "Leading items by cumulative usage";
 "perApp.summaryCharts.trend.title" = "Usage Trend";
 "perApp.summaryCharts.trend.subtitle" = "Smooth traffic trend for the Top 5 and Others";
-"perApp.summaryCharts.top5" = "Top 5 + Others";
 "perApp.summaryCharts.others" = "Others";
 "perApp.summaryCharts.bucketDays" = "%d days / point";
 "perApp.summaryCharts.time" = "Time";
