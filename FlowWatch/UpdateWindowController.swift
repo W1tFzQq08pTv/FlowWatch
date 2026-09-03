@@ -24,7 +24,8 @@ final class UpdateWindowController: NSWindowController, NSWindowDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
-        window.backgroundColor = .clear
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 600, height: 450))
         window.minSize = NSSize(width: 560, height: 410)
