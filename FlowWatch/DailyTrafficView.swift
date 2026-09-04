@@ -22,12 +22,8 @@ struct DailyTrafficView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            DailyTrafficMetricSummaryView(
-                monitor: monitor,
-                isMenuOpen: viewModel.isMenuOpen
-            )
+        VStack(alignment: .leading, spacing: 32) {
+            DailyTrafficMetricSummaryView(monitor: monitor)
             DailyTrafficChartSection(
                 records: chartRecords,
                 title: l10n.t("daily.chart.last7Days"),
@@ -42,35 +38,13 @@ struct DailyTrafficView: View {
             )
             .equatable()
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 12)
-        .padding(.bottom, 14)
-        .frame(width: 420)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .background(OpaqueMenuWindowConfigurator())
-    }
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(l10n.t("daily.title"))
-                    .font(.system(size: 20, weight: .semibold))
-            }
-
-            Spacer()
-
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(monitor.isActive ? Color.green : Color.secondary.opacity(0.5))
-                    .frame(width: 7, height: 7)
-                Text(monitor.isActive ? l10n.t("content.status.running") : l10n.t("content.status.paused"))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .flowWatchGlassCapsule(material: .thin)
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear {
+            viewModel.startUpdating()
+        }
+        .onDisappear {
+            viewModel.stopUpdating()
         }
     }
 
@@ -94,45 +68,8 @@ struct DailyTrafficView: View {
     }
 }
 
-private struct OpaqueMenuWindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> OpaqueMenuWindowConfigurationView {
-        OpaqueMenuWindowConfigurationView()
-    }
-
-    func updateNSView(_ nsView: OpaqueMenuWindowConfigurationView, context: Context) {
-        nsView.applyWindowAppearance()
-    }
-}
-
-private final class OpaqueMenuWindowConfigurationView: NSView {
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        applyWindowAppearance()
-    }
-
-    func applyWindowAppearance() {
-        guard let window else { return }
-        window.isOpaque = true
-        window.backgroundColor = .windowBackgroundColor
-        window.contentView?.wantsLayer = true
-        window.contentView?.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-
-        if let contentView = window.contentView {
-            configureVisualEffects(in: contentView)
-        }
-    }
-
-    private func configureVisualEffects(in view: NSView) {
-        if let visualEffectView = view as? NSVisualEffectView {
-            visualEffectView.blendingMode = .withinWindow
-        }
-        view.subviews.forEach(configureVisualEffects)
-    }
-}
-
 private struct DailyTrafficMetricSummaryView: View {
     @ObservedObject var monitor: NetworkUsageMonitor
-    let isMenuOpen: Bool
     @StateObject private var liveDisplay = DailyTrafficLiveDisplay()
     @AppStorage("maxColorRateMbps") private var maxColorRateMbps: Double = 100
     @AppStorage("colorRatePercent") private var colorRatePercent: Double = 100
@@ -140,7 +77,7 @@ private struct DailyTrafficMetricSummaryView: View {
     @EnvironmentObject private var l10n: LocalizationManager
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: 32) {
             speedMetric(
                 title: l10n.t("daily.download"),
                 todayTitle: l10n.t("daily.todayDownload"),
@@ -168,16 +105,7 @@ private struct DailyTrafficMetricSummaryView: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 4)
         .onAppear {
-            if isMenuOpen {
-                liveDisplay.bind(to: monitor)
-            }
-        }
-        .onChange(of: isMenuOpen) { isOpen in
-            if isOpen {
-                liveDisplay.bind(to: monitor)
-            } else {
-                liveDisplay.unbind()
-            }
+            liveDisplay.bind(to: monitor)
         }
         .onDisappear {
             liveDisplay.unbind()
@@ -197,26 +125,11 @@ private struct DailyTrafficMetricSummaryView: View {
     ) -> some View {
         let speed = formattedSpeedParts(bytesPerSecond)
 
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 8) {
-                Label(title, systemImage: systemImage)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(color)
-                    .fixedSize()
-
-                RecentTrafficSparkline(
-                    samples: recentSamples,
-                    direction: direction,
-                    color: color,
-                    accessibilityTitle: title,
-                    accessibilityTrendLabel: accessibilityTrendLabel,
-                    smoothTransitionEnabled: smoothTransitionEnabled
-                )
-                .equatable()
-                .frame(maxWidth: .infinity)
-                .frame(height: 24)
-                .allowsHitTesting(false)
-            }
+        return VStack(alignment: .leading, spacing: 14) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(color)
+                .fixedSize()
 
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(speed.value)
@@ -230,6 +143,19 @@ private struct DailyTrafficMetricSummaryView: View {
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
+
+            RecentTrafficSparkline(
+                samples: recentSamples,
+                direction: direction,
+                color: color,
+                accessibilityTitle: title,
+                accessibilityTrendLabel: accessibilityTrendLabel,
+                smoothTransitionEnabled: smoothTransitionEnabled
+            )
+            .equatable()
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .allowsHitTesting(false)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(todayTitle)
@@ -264,7 +190,7 @@ private struct DailyTrafficMetricSummaryView: View {
     }
 
     private var visibleRecentSamples: [TrafficRateSample] {
-        isMenuOpen ? monitor.recentRateSamples : []
+        monitor.recentRateSamples
     }
 
     private var displayedUploadBps: Double {
@@ -415,7 +341,7 @@ private struct DailyTrafficChartSection: View, Equatable {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .center) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
@@ -670,7 +596,7 @@ private struct DailyTrafficChartSection: View, Equatable {
                 }
             }
         }
-        .frame(minHeight: 156)
+        .frame(minHeight: 200)
         .padding(.trailing, 24)
     }
 
@@ -1051,11 +977,9 @@ private final class DailyTrafficLiveDisplay: ObservableObject {
 
 final class DailyTrafficViewModel: ObservableObject {
     @Published var records: [DailyTrafficItem] = []
-    @Published private(set) var isMenuOpen = false
 
     private var updateTimer: Timer?
     private let storage: DailyTrafficStorage
-    private var menuObservers: [NSObjectProtocol] = []
 
     private static let dayLabelFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -1070,38 +994,21 @@ final class DailyTrafficViewModel: ObservableObject {
     init(storage: DailyTrafficStorage = .shared) {
         self.storage = storage
         loadData()
-
-        let openObserver = NotificationCenter.default.addObserver(
-            forName: .flowWatchMenuWillOpen, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.isMenuOpen = true
-            self?.loadData()
-            self?.startUpdateTimer()
-        }
-        let closeObserver = NotificationCenter.default.addObserver(
-            forName: .flowWatchMenuDidClose, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.isMenuOpen = false
-            self?.stopUpdateTimer()
-        }
-        menuObservers = [openObserver, closeObserver]
     }
 
     deinit {
         updateTimer?.invalidate()
-        for observer in menuObservers {
-            NotificationCenter.default.removeObserver(observer)
-        }
     }
 
-    private func startUpdateTimer() {
+    func startUpdating() {
+        loadData()
         guard updateTimer == nil else { return }
         updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.loadData()
         }
     }
 
-    private func stopUpdateTimer() {
+    func stopUpdating() {
         updateTimer?.invalidate()
         updateTimer = nil
     }

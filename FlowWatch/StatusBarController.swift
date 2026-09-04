@@ -4,7 +4,7 @@ import Combine
 import QuartzCore
 
 @MainActor
-final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
+final class StatusBarController: NSObject, ObservableObject {
     private let displayModeKey = "statusBarDisplayMode"
     private let maxColorRateKey = "maxColorRateMbps"
     private let colorRatePercentKey = "colorRatePercent"
@@ -145,7 +145,6 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         return style.copy() as! NSParagraphStyle
     }()
 
-    private var dailyTrafficMenuItem: NSMenuItem?
     private var isShowingQuitConfirmation = false
 
     private var cancellables = Set<AnyCancellable>()
@@ -173,7 +172,6 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         guard let button = statusItem.button else { return }
         rebuildMenu()
         statusItem.menu = menu
-        menu.delegate = self
         button.imagePosition = .imageOnly
         button.focusRingType = .none
     }
@@ -343,7 +341,6 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         NotificationCenter.default.publisher(for: .flowWatchLanguageChanged)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.dailyTrafficMenuItem = nil
                 self?.rebuildMenu()
             }
             .store(in: &cancellables)
@@ -1336,24 +1333,6 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         ProcessTrafficStorage.shared.clearAllRecords()
     }
 
-    private func makeDailyTrafficMenuItem() -> NSMenuItem {
-        let hostingView = NSHostingView(
-            rootView: LocalizedRootView { DailyTrafficView(monitor: monitor) }
-                .environmentObject(LocalizationManager.shared)
-        )
-        hostingView.layoutSubtreeIfNeeded()
-        let fittingSize = hostingView.fittingSize
-        let size = NSSize(
-            width: ceil(fittingSize.width),
-            height: ceil(fittingSize.height)
-        )
-        hostingView.frame = NSRect(origin: .zero, size: size)
-
-        let item = NSMenuItem()
-        item.view = hostingView
-        return item
-    }
-
     @objc private func openSettings() {
         LogManager.shared.log("Open settings window")
         DispatchQueue.main.async {
@@ -1370,8 +1349,9 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     @objc private func openStatisticsDetail() {
         LogManager.shared.log("Open traffic statistics detail window")
-        DispatchQueue.main.async {
-            TrafficStatisticsDetailWindowController.shared.show()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            TrafficStatisticsDetailWindowController.shared.show(monitor: self.monitor)
         }
     }
 
@@ -1631,15 +1611,6 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
 
     private func rebuildMenu() {
         let newMenu = NSMenu()
-        if let existing = dailyTrafficMenuItem, menu.index(of: existing) != -1 {
-            menu.removeItem(existing)
-            newMenu.addItem(existing)
-        } else {
-            let item = makeDailyTrafficMenuItem()
-            dailyTrafficMenuItem = item
-            newMenu.addItem(item)
-        }
-        newMenu.addItem(.separator())
         let statisticsItem = NSMenuItem(title: LocalizationManager.shared.t("menu.statisticsDetail"), action: #selector(openStatisticsDetail), keyEquivalent: "")
         statisticsItem.target = self
         statisticsItem.image = menuSymbol(named: "chart.bar.xaxis", accessibilityDescription: statisticsItem.title)
@@ -1671,7 +1642,6 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
         quitItem.image = menuSymbol(named: "power", accessibilityDescription: quitItem.title)
         newMenu.addItem(quitItem)
         menu = newMenu
-        menu.delegate = self
         statusItem.menu = menu
         refreshUpdateMenuItem()
     }
@@ -1682,16 +1652,6 @@ final class StatusBarController: NSObject, ObservableObject, NSMenuDelegate {
             .withSymbolConfiguration(configuration)
         image?.isTemplate = true
         return image
-    }
-
-    // MARK: - NSMenuDelegate
-
-    nonisolated func menuWillOpen(_ menu: NSMenu) {
-        NotificationCenter.default.post(name: .flowWatchMenuWillOpen, object: nil)
-    }
-
-    nonisolated func menuDidClose(_ menu: NSMenu) {
-        NotificationCenter.default.post(name: .flowWatchMenuDidClose, object: nil)
     }
 
     deinit {

@@ -8,6 +8,4 @@ extension Notification.Name {
     static let flowWatchPerAppIntervalChanged = Notification.Name("FlowWatch.perAppIntervalChanged")
     static let flowWatchSampleIntervalChanged = Notification.Name("FlowWatch.sampleIntervalChanged")
     static let flowWatchStatusBarColoringChanged = Notification.Name("FlowWatch.statusBarColoringChanged")
-    static let flowWatchMenuWillOpen = Notification.Name("FlowWatch.menuWillOpen")
-    static let flowWatchMenuDidClose = Notification.Name("FlowWatch.menuDidClose")
 }
