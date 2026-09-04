@@ -14,9 +14,9 @@ final class TrafficStatisticsDetailWindowController: NSWindowController, NSWindo
         nil
     }
 
-    private func makeWindow() -> NSWindow {
+    private func makeWindow(monitor: NetworkUsageMonitor) -> NSWindow {
         let hostingController = NSHostingController(
-            rootView: LocalizedRootView { TrafficStatisticsDetailView() }
+            rootView: LocalizedRootView { TrafficStatisticsDetailView(monitor: monitor) }
                 .environmentObject(LocalizationManager.shared)
         )
         let window = NSWindow(contentViewController: hostingController)
@@ -33,9 +33,9 @@ final class TrafficStatisticsDetailWindowController: NSWindowController, NSWindo
         return window
     }
 
-    func show() {
+    func show(monitor: NetworkUsageMonitor) {
         if window == nil {
-            self.window = makeWindow()
+            self.window = makeWindow(monitor: monitor)
         }
         window?.title = LocalizationManager.shared.t("statistics.title")
         NSApp.activate(ignoringOtherApps: true)
@@ -52,7 +52,8 @@ final class TrafficStatisticsDetailWindowController: NSWindowController, NSWindo
 struct TrafficStatisticsDetailView: View {
     @EnvironmentObject private var l10n: LocalizationManager
     @StateObject private var viewModel = TrafficStatisticsDetailViewModel()
-    @State private var selectedSection: StatisticsSection = .overview
+    let monitor: NetworkUsageMonitor
+    @State private var selectedSection: StatisticsSection = .home
 
     private var summary: TrafficStatisticsSummary {
         viewModel.summary
@@ -134,7 +135,7 @@ struct TrafficStatisticsDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 detailHeader
 
-                if !summary.hasData && selectedSection != .charts {
+                if !summary.hasData && selectedSection != .charts && selectedSection != .home {
                     emptyState
                 }
 
@@ -171,6 +172,8 @@ struct TrafficStatisticsDetailView: View {
     @ViewBuilder
     private var selectedContent: some View {
         switch selectedSection {
+        case .home:
+            DailyTrafficView(monitor: monitor)
         case .overview:
             overviewSection
         case .charts:
@@ -695,6 +698,7 @@ private final class TrafficStatisticsDetailViewModel: ObservableObject {
 }
 
 private enum StatisticsSection: String, CaseIterable, Identifiable {
+    case home
     case overview
     case charts
     case trends
@@ -704,6 +708,8 @@ private enum StatisticsSection: String, CaseIterable, Identifiable {
 
     var titleKey: String {
         switch self {
+        case .home:
+            return "statistics.section.home"
         case .overview:
             return "statistics.section.overview"
         case .charts:
@@ -717,6 +723,8 @@ private enum StatisticsSection: String, CaseIterable, Identifiable {
 
     var descriptionKey: String {
         switch self {
+        case .home:
+            return "statistics.section.home.description"
         case .overview:
             return "statistics.section.overview.description"
         case .charts:
@@ -730,6 +738,8 @@ private enum StatisticsSection: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .home:
+            return "house"
         case .overview:
             return "square.grid.2x2"
         case .charts:
@@ -991,7 +1001,7 @@ private enum TrafficStatsFormatter {
 
 #if DEBUG
 #Preview {
-    TrafficStatisticsDetailView()
+    TrafficStatisticsDetailView(monitor: NetworkUsageMonitor())
         .environmentObject(LocalizationManager.shared)
         .environment(\.locale, LocalizationManager.shared.locale)
 }

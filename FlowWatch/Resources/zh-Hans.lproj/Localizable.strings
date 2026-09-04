@@ -95,6 +95,8 @@
 "statistics.title" = "统计详情";
 "statistics.empty.title" = "暂无历史数据";
 "statistics.empty.subtitle" = "开始使用后，这里会显示每天累计的下载和上传。";
+"statistics.section.home" = "实时监控";
+"statistics.section.home.description" = "查看实时网速、今日流量和近 7 天走势。";
 "statistics.section.overview" = "总览";
 "statistics.section.overview.description" = "查看全部历史、今日、昨日和记录天数。";
 "statistics.section.charts" = "图表";

@@ -95,6 +95,8 @@
 "statistics.title" = "Statistics Details";
 "statistics.empty.title" = "No history yet";
 "statistics.empty.subtitle" = "Daily download and upload totals will appear here once FlowWatch records traffic.";
+"statistics.section.home" = "Live Monitor";
+"statistics.section.home.description" = "View live speeds, today’s traffic, and trends over the last 7 days.";
 "statistics.section.overview" = "Overview";
 "statistics.section.overview.description" = "Review all-time totals, today, yesterday, and recorded days.";
 "statistics.section.charts" = "Charts";
