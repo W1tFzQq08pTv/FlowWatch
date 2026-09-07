@@ -368,3 +368,22 @@
 
 "settings.smoothTransition.toggle" = "平滑过渡";
 "settings.smoothTransition.desc" = "开启后速率数字会平滑渐变，而非直接跳变。";
+
+// Composable status bar
+"settings.layout.component.traffic" = "上下行数字";
+"settings.layout.component.animation" = "动画";
+"settings.layout.component.signal" = "极简信号";
+"settings.layout.description" = "拖动左侧把手或名称调整顺序，上方预览对应状态栏从左到右的排列。至少保留一项。";
+"settings.layout.preview" = "从左到右的显示顺序";
+"settings.layout.moveLeft" = "向左移动";
+"settings.layout.moveRight" = "向右移动";
+"settings.layout.direction" = "显示方向";
+"settings.layout.direction.both" = "上下行都显示";
+"settings.layout.direction.upload" = "仅上行";
+"settings.layout.direction.download" = "仅下行";
+"settings.layout.arrangement" = "数字排列";
+"settings.layout.arrangement.stacked" = "上下双行";
+"settings.layout.arrangement.horizontal" = "左右并排";
+"settings.layout.downloadFirst" = "下行优先（上方／左侧）";
+
+"settings.layout.dragHint" = "上下拖动调整顺序；按 Esc 或移出列表后松手取消。";

@@ -3,6 +3,7 @@ import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
+    @AppStorage(StatusBarLayout.defaultsKey) private var statusBarLayoutRaw = ""
     @AppStorage("statusBarDisplayMode") private var statusBarDisplayModeRaw: String = FlowWatchApp.StatusBarDisplayMode.speed.rawValue
     @AppStorage("maxColorRateMbps") private var maxColorRateMbps: Double = 100
     @AppStorage("colorRatePercent") private var colorRatePercent: Double = 100
@@ -197,23 +198,35 @@ struct SettingsView: View {
             }
         case .statusBar:
             settingsPanel(title: l10n.t("settings.section.displayContent")) {
-                settingsRow(title: l10n.t("settings.displayContent.label")) {
-                    FlowWatchMenuControl(
-                        options: FlowWatchApp.StatusBarDisplayMode.allCases.map { (l10n.t($0.titleKey), $0.rawValue) },
-                        selection: $statusBarDisplayModeRaw,
-                        tint: currentSection.tint,
-                        width: 220
-                    )
-                }
-                if currentStatusBarDisplayMode == .minimalSignal || currentStatusBarDisplayMode == .curveLoader {
+                statusBarComponentControls
+                if statusBarLayout.enabled.contains(.traffic) {
                     rowDivider
-                    settingsRow(
-                        title: l10n.t("settings.minimalSignal.showTotals"),
-                        detail: l10n.t("settings.minimalSignal.showTotals.desc")
-                    ) {
-                        ModernSwitch(isOn: $minimalSignalShowsTrafficTotals, tint: currentSection.tint)
+                    settingsRow(title: l10n.t("settings.displayContent.label")) {
+                        FlowWatchMenuControl(
+                            options: StatusBarLayout.TrafficContent.allCases.map { (l10n.t($0.titleKey), $0) },
+                            selection: layoutBinding(\.content), tint: currentSection.tint, width: 220
+                        )
                     }
-                    if currentStatusBarDisplayMode == .curveLoader {
+                    settingsRow(title: l10n.t("settings.layout.direction")) {
+                        FlowWatchMenuControl(
+                            options: StatusBarLayout.Direction.allCases.map { (l10n.t($0.titleKey), $0) },
+                            selection: layoutBinding(\.direction), tint: currentSection.tint, width: 220
+                        )
+                    }
+                    if statusBarLayout.direction == .both {
+                        settingsRow(title: l10n.t("settings.layout.arrangement")) {
+                            FlowWatchMenuControl(
+                                options: StatusBarLayout.Arrangement.allCases.map { (l10n.t($0.titleKey), $0) },
+                                selection: layoutBinding(\.arrangement), tint: currentSection.tint, width: 220
+                            )
+                        }
+                        settingsRow(title: l10n.t("settings.layout.downloadFirst")) {
+                            ModernSwitch(isOn: layoutBinding(\.downloadFirst), tint: currentSection.tint)
+                        }
+                    }
+                }
+                if statusBarLayout.isAnimated {
+                    if statusBarLayout.enabled.contains(.animation) {
                         rowDivider
                         settingsRow(
                             title: l10n.t("settings.curveLoader.selection"),
@@ -260,9 +273,9 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(l10n.t(currentStatusBarDisplayMode == .curveLoader ? "settings.curveLoader.animationSpeed" : "settings.minimalSignal.blinkSpeed"))
+                                Text(l10n.t(statusBarLayout.enabled.contains(.animation) ? "settings.curveLoader.animationSpeed" : "settings.minimalSignal.blinkSpeed"))
                                     .font(.system(size: 13, weight: .medium))
-                                Text(l10n.t(currentStatusBarDisplayMode == .curveLoader ? "settings.curveLoader.animationSpeed.desc" : "settings.minimalSignal.blinkSpeed.desc"))
+                                Text(l10n.t(statusBarLayout.enabled.contains(.animation) ? "settings.curveLoader.animationSpeed.desc" : "settings.minimalSignal.blinkSpeed.desc"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -674,8 +687,24 @@ struct SettingsView: View {
         return Color(nsColor: NSColor(red: red, green: green, blue: blue, alpha: alpha))
     }
 
-    private var currentStatusBarDisplayMode: FlowWatchApp.StatusBarDisplayMode {
-        FlowWatchApp.StatusBarDisplayMode(rawValue: statusBarDisplayModeRaw) ?? .speed
+    private var statusBarLayout: StatusBarLayout {
+        StatusBarLayout.load(rawValue: statusBarLayoutRaw, legacyMode: statusBarDisplayModeRaw,
+                             showsTotals: minimalSignalShowsTrafficTotals)
+    }
+
+    private func layoutBinding<Value>(_ keyPath: WritableKeyPath<StatusBarLayout, Value>) -> Binding<Value> {
+        Binding(get: { statusBarLayout[keyPath: keyPath] }, set: { value in
+            var layout = statusBarLayout
+            layout[keyPath: keyPath] = value
+            statusBarLayoutRaw = layout.rawValue
+        })
+    }
+
+    private var statusBarComponentControls: some View {
+        StatusBarComponentEditor(layout: Binding(
+            get: { statusBarLayout },
+            set: { statusBarLayoutRaw = $0.rawValue }
+        ), tint: currentSection.tint)
     }
 
     private var mathCurveLoaderOptions: [(String, String)] {
@@ -955,7 +984,7 @@ struct SettingsView: View {
     }
 }
 
-private struct ModernSwitch: View {
+struct ModernSwitch: View {
     @Binding var isOn: Bool
     let tint: Color
     var isEnabled: Bool = true
