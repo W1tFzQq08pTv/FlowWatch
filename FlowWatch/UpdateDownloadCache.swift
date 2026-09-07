@@ -12,6 +12,85 @@ final class UpdateDownloadCache: NSObject {
     private var progressHandler: ProgressHandler?
     private var completionHandler: CompletionHandler?
     private var didMoveDownload = false
+    private var expectedLength: UInt64 = 0
+    private var downloadingVersion: (version: String, build: String)?
+    private var protectedFiles = Set<URL>()
+    private let directoryOverride: URL?
+    nonisolated private let temporaryDirectory: URL
+
+    init(cacheDirectory: URL? = nil, temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
+        directoryOverride = cacheDirectory
+        self.temporaryDirectory = temporaryDirectory
+        super.init()
+    }
+
+    func protect(_ url: URL) { protectedFiles.insert(url.standardizedFileURL) }
+    func unprotect(_ url: URL) { protectedFiles.remove(url.standardizedFileURL) }
+
+    /// Only numeric release archives owned by FlowWatch are eligible for deletion.
+    @discardableResult
+    func cleanup(throughVersion version: String, build: String, keeping: Set<URL> = [], now: Date = Date()) -> [URL] {
+        let protected = protectedFiles.union(keeping.map(\.standardizedFileURL))
+            .union(destinationURL.map { [$0.standardizedFileURL] } ?? [])
+        var removed: [URL] = []
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey]
+        let files = (try? FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: Array(keys))) ?? []
+        for url in files {
+            guard !protected.contains(url.standardizedFileURL),
+                  let attributes = try? url.resourceValues(forKeys: keys),
+                  attributes.isRegularFile == true, attributes.isSymbolicLink != true,
+                  let release = archiveRelease(url.lastPathComponent),
+                  isAtMost(release, version: version, build: build) else { continue }
+            do {
+                try FileManager.default.removeItem(at: url)
+                removed.append(url)
+            } catch { /* A locked or inaccessible cache can be retried next time. */ }
+        }
+        let temporaryFiles = (try? FileManager.default.contentsOfDirectory(at: temporaryDirectory, includingPropertiesForKeys: Array(keys))) ?? []
+        for url in temporaryFiles {
+            let name = url.deletingPathExtension().lastPathComponent
+            guard url.pathExtension == "download", name.hasPrefix("flowwatch-update-"),
+                  UUID(uuidString: String(name.dropFirst("flowwatch-update-".count))) != nil,
+                  let attributes = try? url.resourceValues(forKeys: keys),
+                  attributes.isRegularFile == true, attributes.isSymbolicLink != true,
+                  let modified = attributes.contentModificationDate,
+                  now.timeIntervalSince(modified) > 24 * 60 * 60 else { continue }
+            do {
+                try FileManager.default.removeItem(at: url)
+                removed.append(url)
+            } catch { /* Leave unrelated or unavailable files alone. */ }
+        }
+        return removed
+    }
+
+    private func archiveRelease(_ name: String) -> (version: String, build: String)? {
+        guard name.hasPrefix("FlowWatch-"), name.hasSuffix(".zip") else { return nil }
+        let parts = name.dropFirst("FlowWatch-".count).dropLast(4).split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 2, numericVersion(String(parts[0])) != nil,
+              !parts[1].isEmpty, parts[1].allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return (String(parts[0]), String(parts[1]))
+    }
+
+    private func numericVersion(_ version: String) -> [UInt64]? {
+        let parts = version.split(separator: ".", omittingEmptySubsequences: false)
+        guard !parts.isEmpty else { return nil }
+        let values = parts.compactMap { part -> UInt64? in
+            guard !part.isEmpty, part.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+            return UInt64(part)
+        }
+        return values.count == parts.count ? values : nil
+    }
+
+    private func isAtMost(_ release: (version: String, build: String), version: String, build: String) -> Bool {
+        guard let left = numericVersion(release.version), let right = numericVersion(version),
+              let leftBuild = UInt64(release.build), let rightBuild = UInt64(build) else { return false }
+        for index in 0..<max(left.count, right.count) {
+            let lhs = index < left.count ? left[index] : 0
+            let rhs = index < right.count ? right[index] : 0
+            if lhs != rhs { return lhs < rhs }
+        }
+        return leftBuild <= rightBuild
+    }
 
     func cachedFileURL(version: String, build: String) -> URL {
         let safeVersion = version.replacingOccurrences(of: "/", with: "-")
@@ -27,7 +106,9 @@ final class UpdateDownloadCache: NSObject {
         if expectedLength > 0,
            let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
            UInt64(size) != expectedLength {
-            try? FileManager.default.removeItem(at: url)
+            if !protectedFiles.contains(url.standardizedFileURL) {
+                try? FileManager.default.removeItem(at: url)
+            }
             return nil
         }
         return url
@@ -43,11 +124,16 @@ final class UpdateDownloadCache: NSObject {
     ) {
         cancel()
         if let cached = existingFileURL(version: version, build: build, expectedLength: expectedLength) {
+            cleanup(throughVersion: version, build: build, keeping: [cached])
             progress(1)
             completion(.success(cached))
             return
         }
 
+        guard !protectedFiles.contains(cachedFileURL(version: version, build: build).standardizedFileURL) else {
+            completion(.failure(CocoaError(.fileWriteNoPermission)))
+            return
+        }
         do {
             try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         } catch {
@@ -59,6 +145,8 @@ final class UpdateDownloadCache: NSObject {
         progressHandler = progress
         completionHandler = completion
         didMoveDownload = false
+        self.expectedLength = expectedLength
+        downloadingVersion = (version, build)
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.waitsForConnectivity = true
@@ -82,10 +170,12 @@ final class UpdateDownloadCache: NSObject {
         progressHandler = nil
         completionHandler = nil
         destinationURL = nil
+        downloadingVersion = nil
     }
 
     private var cacheDirectory: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        if let directoryOverride { return directoryOverride }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.hxd.FlowWatch", isDirectory: true)
             .appendingPathComponent("Updates", isDirectory: true)
     }
@@ -98,6 +188,7 @@ final class UpdateDownloadCache: NSObject {
         progressHandler = nil
         completionHandler = nil
         destinationURL = nil
+        downloadingVersion = nil
         completion?(result)
     }
 }
@@ -114,7 +205,8 @@ extension UpdateDownloadCache: URLSessionDownloadDelegate {
             ? min(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite), 1)
             : nil
         Task { @MainActor [weak self] in
-            self?.progressHandler?(progress)
+            guard let self, self.task === downloadTask else { return }
+            self.progressHandler?(progress)
         }
     }
 
@@ -123,28 +215,41 @@ extension UpdateDownloadCache: URLSessionDownloadDelegate {
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        let stableTemporaryURL = FileManager.default.temporaryDirectory
+        let stableTemporaryURL = temporaryDirectory
             .appendingPathComponent("flowwatch-update-\(UUID().uuidString)")
             .appendingPathExtension("download")
         do {
             try FileManager.default.moveItem(at: location, to: stableTemporaryURL)
         } catch {
             Task { @MainActor [weak self] in
-                self?.finish(.failure(error))
+                guard let self, self.task === downloadTask else { return }
+                self.finish(.failure(error))
             }
             return
         }
         Task { @MainActor [weak self] in
-            guard let self, let destinationURL = self.destinationURL else {
+            guard let self, self.task === downloadTask, let destinationURL = self.destinationURL else {
                 try? FileManager.default.removeItem(at: stableTemporaryURL)
                 return
             }
+            defer { try? FileManager.default.removeItem(at: stableTemporaryURL) }
             do {
+                if let response = downloadTask.response as? HTTPURLResponse,
+                   !(200...299).contains(response.statusCode) {
+                    throw URLError(.badServerResponse)
+                }
+                let size = try stableTemporaryURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard self.expectedLength == 0 || UInt64(size) == self.expectedLength else {
+                    throw URLError(.cannotDecodeContentData)
+                }
                 if FileManager.default.fileExists(atPath: destinationURL.path) {
                     try FileManager.default.removeItem(at: destinationURL)
                 }
                 try FileManager.default.moveItem(at: stableTemporaryURL, to: destinationURL)
                 self.didMoveDownload = true
+                if let release = self.downloadingVersion {
+                    self.cleanup(throughVersion: release.version, build: release.build, keeping: [destinationURL])
+                }
                 self.finish(.success(destinationURL))
             } catch {
                 self.finish(.failure(error))
@@ -159,7 +264,7 @@ extension UpdateDownloadCache: URLSessionDownloadDelegate {
     ) {
         guard let error else { return }
         Task { @MainActor [weak self] in
-            guard let self, !self.didMoveDownload else { return }
+            guard let self, self.task === task, !self.didMoveDownload else { return }
             self.finish(.failure(error))
         }
     }
