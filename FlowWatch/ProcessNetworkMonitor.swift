@@ -15,7 +15,7 @@ struct AppTrafficRate: Identifiable {
 }
 
 final class ProcessNetworkMonitor: ObservableObject {
-    @Published var appTrafficRates: [AppTrafficRate] = []
+    @Published var scopedTrafficRates: [TrafficAccountingScope: [AppTrafficRate]] = [:]
     @Published var isEnabled: Bool = false
 
     private let enabledKey = "perAppMonitoring.enabled"
@@ -31,10 +31,9 @@ final class ProcessNetworkMonitor: ObservableObject {
     private var consecutiveFailures = 0
     private var sampleTimer: DispatchSourceTimer?
     private var sampleTimeoutWorkItem: DispatchWorkItem?
-    private var lastSnapshot: [pid_t: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
+    private var accounting = NettopTrafficAccounting()
     private var lastSuccessfulSampleAt: Date?
     private let resolver = AppInfoResolver.shared
-    private let storage = ProcessTrafficStorage.shared
     private let queueKey = DispatchSpecificKey<UInt8>()
     private let queue = DispatchQueue(label: "com.flowwatch.processmonitor", qos: .utility)
     private var activeSampleContext: SampleContext?
@@ -137,7 +136,9 @@ final class ProcessNetworkMonitor: ObservableObject {
     }
 
     func saveData() {
-        storage.saveIfNeeded(force: true)
+        for scope in TrafficAccountingScope.allCases where scope != .legacy {
+            ProcessTrafficStorage.storage(for: scope).saveIfNeeded(force: true)
+        }
     }
 
     private func performOnQueue(_ work: @escaping () -> Void) {
@@ -160,7 +161,7 @@ final class ProcessNetworkMonitor: ObservableObject {
         guard sampleTimer == nil, activeSampleContext == nil else { return }
         LogManager.shared.log("ProcessNetworkMonitor started")
         consecutiveFailures = 0
-        lastSnapshot.removeAll()
+        accounting = NettopTrafficAccounting()
         lastSuccessfulSampleAt = nil
         startSampleTimer()
         runSampleIfNeeded()
@@ -169,11 +170,11 @@ final class ProcessNetworkMonitor: ObservableObject {
     private func stopMonitoring(logStop: Bool, clearPublishedRates: Bool) {
         stopSampleTimer()
         stopActiveSample()
-        lastSnapshot.removeAll()
+        accounting = NettopTrafficAccounting()
         lastSuccessfulSampleAt = nil
         if clearPublishedRates {
             DispatchQueue.main.async { [weak self] in
-                self?.appTrafficRates = []
+                self?.scopedTrafficRates = [:]
             }
         }
         if logStop {
@@ -210,9 +211,8 @@ final class ProcessNetworkMonitor: ObservableObject {
 
         process.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
         process.arguments = [
-            "-P",
             "-L", "1",
-            "-J", "bytes_in,bytes_out",
+            "-J", "interface,bytes_in,bytes_out",
             "-n"
         ]
         process.standardInput = FileHandle.nullDevice
@@ -356,7 +356,7 @@ final class ProcessNetworkMonitor: ObservableObject {
 
     private func registerFailure(_ message: String, level: LogManager.Level) {
         consecutiveFailures += 1
-        lastSnapshot.removeAll()
+        accounting = NettopTrafficAccounting()
         lastSuccessfulSampleAt = nil
         LogManager.shared.log(
             "\(message); consecutiveFailures=\(consecutiveFailures)",
@@ -381,150 +381,55 @@ final class ProcessNetworkMonitor: ObservableObject {
     }
 
     private func handleSampleOutput(_ output: String, sampledAt: Date) {
-        let parsed = parseNettopOutput(output)
-        guard !parsed.isEmpty else {
-            registerFailure("nettop single sample returned no process rows", level: .warn)
+        guard let parsed = NettopTrafficAccounting.parse(output) else {
+            registerFailure("nettop single sample returned an invalid header", level: .warn)
             return
         }
 
         consecutiveFailures = 0
 
-        let previous = lastSnapshot
         let rateInterval = max(sampledAt.timeIntervalSince(lastSuccessfulSampleAt ?? sampledAt), 1)
-        var newSnapshot: [pid_t: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
-
-        var bundleDeltas: [String: (info: AppInfo, deltaIn: UInt64, deltaOut: UInt64)] = [:]
-
-        for entry in parsed {
-            newSnapshot[entry.pid] = (bytesIn: entry.bytesIn, bytesOut: entry.bytesOut)
-
-            var deltaIn: UInt64 = 0
-            var deltaOut: UInt64 = 0
-            if let prev = previous[entry.pid] {
-                deltaIn = entry.bytesIn >= prev.bytesIn ? entry.bytesIn - prev.bytesIn : 0
-                deltaOut = entry.bytesOut >= prev.bytesOut ? entry.bytesOut - prev.bytesOut : 0
-            }
-
+        let deltas = accounting.sample(parsed, externalInterfaces: TrafficAccountingScope.externalInterfaceNames())
+        var bundleDeltas: [TrafficAccountingScope: [String: (info: AppInfo, deltaIn: UInt64, deltaOut: UInt64)]] = [:]
+        for delta in deltas {
+            let entry = delta.entry
             let info = resolver.resolve(pid: entry.pid, processName: entry.processName)
-            let key = info.bundleID
-            if var existing = bundleDeltas[key] {
-                existing.deltaIn += deltaIn
-                existing.deltaOut += deltaOut
-                bundleDeltas[key] = existing
-            } else {
-                bundleDeltas[key] = (info: info, deltaIn: deltaIn, deltaOut: deltaOut)
-            }
+            var bundled = bundleDeltas[delta.scope]?[info.bundleID] ?? (info: info, deltaIn: 0, deltaOut: 0)
+            bundled.deltaIn &+= delta.bytesIn
+            bundled.deltaOut &+= delta.bytesOut
+            bundleDeltas[delta.scope, default: [:]][info.bundleID] = bundled
         }
-
-        lastSnapshot = newSnapshot
         lastSuccessfulSampleAt = sampledAt
 
-        var rates: [AppTrafficRate] = []
-        var todayRecordsByBundleID = storage.getTodayRecordsByBundleID()
-
-        for (bundleID, data) in bundleDeltas {
-            var todayRecord = todayRecordsByBundleID[bundleID]
-            if data.deltaIn > 0 || data.deltaOut > 0 {
-                todayRecord = storage.addBytesAndReturnTodayRecord(
-                    bundleID: bundleID,
-                    displayName: data.info.displayName,
-                    isApp: data.info.isApp,
-                    downloadBytes: data.deltaIn,
-                    uploadBytes: data.deltaOut
+        var scopedRates: [TrafficAccountingScope: [AppTrafficRate]] = [:]
+        for scope in TrafficAccountingScope.allCases where scope != .legacy {
+            let storage = ProcessTrafficStorage.storage(for: scope)
+            let deltas = bundleDeltas[scope] ?? [:]
+            var records = storage.getTodayRecordsByBundleID()
+            for (bundleID, data) in deltas where data.deltaIn > 0 || data.deltaOut > 0 {
+                records[bundleID] = storage.addBytesAndReturnTodayRecord(
+                    bundleID: bundleID, displayName: data.info.displayName, isApp: data.info.isApp,
+                    downloadBytes: data.deltaIn, uploadBytes: data.deltaOut
                 )
-                todayRecordsByBundleID[bundleID] = todayRecord
             }
-
-            rates.append(AppTrafficRate(
-                id: bundleID,
-                displayName: data.info.displayName,
-                icon: data.info.icon,
-                isApp: data.info.isApp,
-                downloadBps: Double(data.deltaIn) / rateInterval,
-                uploadBps: Double(data.deltaOut) / rateInterval,
-                totalDownloaded: todayRecord?.downloadBytes ?? 0,
-                totalUploaded: todayRecord?.uploadBytes ?? 0
-            ))
-        }
-
-        for record in todayRecordsByBundleID.values {
-            if bundleDeltas[record.bundleID] == nil {
-                let info = resolver.resolve(pid: 0, processName: record.displayName)
+            var rates: [AppTrafficRate] = []
+            for bundleID in Set(records.keys).union(deltas.keys) {
+                let record = records[bundleID]
+                let delta = deltas[bundleID]
+                let info = delta?.info ?? resolver.resolve(pid: 0, processName: record?.displayName ?? bundleID)
                 rates.append(AppTrafficRate(
-                    id: record.bundleID,
-                    displayName: record.displayName,
-                    icon: info.icon,
-                    isApp: record.isApp ?? info.isApp,
-                    downloadBps: 0,
-                    uploadBps: 0,
-                    totalDownloaded: record.downloadBytes,
-                    totalUploaded: record.uploadBytes
+                    id: bundleID, displayName: record?.displayName ?? info.displayName,
+                    icon: info.icon, isApp: record?.isApp ?? info.isApp,
+                    downloadBps: Double(delta?.deltaIn ?? 0) / rateInterval,
+                    uploadBps: Double(delta?.deltaOut ?? 0) / rateInterval,
+                    totalDownloaded: record?.downloadBytes ?? 0, totalUploaded: record?.uploadBytes ?? 0
                 ))
             }
+            scopedRates[scope] = rates.sorted { ($0.totalDownloaded + $0.totalUploaded) > ($1.totalDownloaded + $1.totalUploaded) }
         }
-
-        rates.sort { ($0.totalDownloaded + $0.totalUploaded) > ($1.totalDownloaded + $1.totalUploaded) }
-
         DispatchQueue.main.async { [weak self] in
-            self?.appTrafficRates = rates
+            self?.scopedTrafficRates = scopedRates
         }
     }
 
-    private struct NettopEntry {
-        let pid: pid_t
-        let processName: String
-        let bytesIn: UInt64
-        let bytesOut: UInt64
-    }
-
-    private func parseNettopOutput(_ output: String) -> [NettopEntry] {
-        var entries: [NettopEntry] = []
-        let lines = output.components(separatedBy: "\n")
-
-        var headerParsed = false
-        var bytesInIndex = 1
-        var bytesOutIndex = 2
-
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { continue }
-
-            let columns = trimmed.components(separatedBy: ",")
-
-            if !headerParsed {
-                for (index, col) in columns.enumerated() {
-                    let cleaned = col.trimmingCharacters(in: .whitespaces).lowercased()
-                    if cleaned == "bytes_in" { bytesInIndex = index }
-                    if cleaned == "bytes_out" { bytesOutIndex = index }
-                }
-                headerParsed = true
-                continue
-            }
-
-            guard columns.count > max(bytesInIndex, bytesOutIndex) else { continue }
-
-            let processField = columns[0].trimmingCharacters(in: .whitespaces)
-            guard let pidInfo = parseProcessField(processField) else { continue }
-
-            let bytesIn = UInt64(columns[bytesInIndex].trimmingCharacters(in: .whitespaces)) ?? 0
-            let bytesOut = UInt64(columns[bytesOutIndex].trimmingCharacters(in: .whitespaces)) ?? 0
-
-            entries.append(NettopEntry(
-                pid: pidInfo.pid,
-                processName: pidInfo.name,
-                bytesIn: bytesIn,
-                bytesOut: bytesOut
-            ))
-        }
-
-        return entries
-    }
-
-    private func parseProcessField(_ field: String) -> (name: String, pid: pid_t)? {
-        guard let lastDotIndex = field.lastIndex(of: ".") else { return nil }
-        let name = String(field[field.startIndex..<lastDotIndex])
-        let pidString = String(field[field.index(after: lastDotIndex)...])
-        guard let pid = pid_t(pidString) else { return nil }
-        return (name: name, pid: pid)
-    }
 }

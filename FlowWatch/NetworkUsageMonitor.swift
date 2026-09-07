@@ -38,8 +38,7 @@ final class NetworkUsageMonitor: ObservableObject {
     @Published private(set) var todayDownloaded: UInt64 = 0
     @Published private(set) var todayUploaded: UInt64 = 0
 
-    private var lastRx: UInt64?
-    private var lastTx: UInt64?
+    private var lastInterfaceBytes: [String: (rx: UInt64, tx: UInt64)]?
     private var timer: DispatchSourceTimer?
     private var dayChangeTimer: DispatchSourceTimer?
     private var lastRecordedDate: Date = Date()
@@ -114,21 +113,18 @@ final class NetworkUsageMonitor: ObservableObject {
 
         let bytes = currentBytes()
 
-        guard let lastRx = lastRx, let lastTx = lastTx else {
-            LogManager.shared.log("Sample baseline established: rx=\(bytes.rx), tx=\(bytes.tx)")
-            self.lastRx = bytes.rx
-            self.lastTx = bytes.tx
+        guard let previous = lastInterfaceBytes else {
+            lastInterfaceBytes = bytes
             return
         }
-
-        // 防止网卡重置或计数回绕导致的巨大跳变（计数变小视为重置，本次增量归零）
-        let counterResetRx = bytes.rx < lastRx
-        let counterResetTx = bytes.tx < lastTx
-        if counterResetRx || counterResetTx {
-            LogManager.shared.log("Counter reset detected: rx \(lastRx) -> \(bytes.rx), tx \(lastTx) -> \(bytes.tx)")
+        var deltaRx: UInt64 = 0
+        var deltaTx: UInt64 = 0
+        for (name, current) in bytes {
+            guard let baseline = previous[name] else { continue }
+            deltaRx &+= current.rx >= baseline.rx ? current.rx - baseline.rx : 0
+            deltaTx &+= current.tx >= baseline.tx ? current.tx - baseline.tx : 0
         }
-        let deltaRx: UInt64 = counterResetRx ? 0 : bytes.rx - lastRx
-        let deltaTx: UInt64 = counterResetTx ? 0 : bytes.tx - lastTx
+        lastInterfaceBytes = bytes
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -144,9 +140,6 @@ final class NetworkUsageMonitor: ObservableObject {
             // 由 DailyTrafficStorage 的 isDirty + 定时保存机制负责持久化
             DailyTrafficStorage.shared.updateTodayRecord(downloadBytes: self.todayDownloaded, uploadBytes: self.todayUploaded)
         }
-
-        self.lastRx = bytes.rx
-        self.lastTx = bytes.tx
     }
 
     private func appendRecentRateSample(downloadBps: Double, uploadBps: Double) {
@@ -180,11 +173,11 @@ final class NetworkUsageMonitor: ObservableObject {
         recentRateSamples = updatedSamples
     }
 
-    private func currentBytes() -> (rx: UInt64, tx: UInt64) {
-        var rx: UInt64 = 0
-        var tx: UInt64 = 0
+    private func currentBytes() -> [String: (rx: UInt64, tx: UInt64)] {
+        var bytes: [String: (rx: UInt64, tx: UInt64)] = [:]
         var addrs: UnsafeMutablePointer<ifaddrs>?
 
+        let externalInterfaces = TrafficAccountingScope.externalInterfaceNames()
         if getifaddrs(&addrs) == 0, let first = addrs {
             var pointer = first
             while true {
@@ -192,21 +185,12 @@ final class NetworkUsageMonitor: ObservableObject {
                 let isUp = (flags & IFF_UP) == IFF_UP
                 let isLoopback = (flags & IFF_LOOPBACK) == IFF_LOOPBACK
 
-                // 获取接口名称，过滤虚拟网卡
                 let name = String(cString: pointer.pointee.ifa_name)
-                let isVirtualInterface = name.hasPrefix("utun") || 
-                                       name.hasPrefix("tap") || 
-                                       name.hasPrefix("tun") ||
-                                       name.hasPrefix("ipsec") ||
-                                       name.hasPrefix("ppp") ||
-                                       name.hasPrefix("bridge") ||
-                                       name.hasPrefix("awdl") || // Apple Wireless Direct Link
-                                       name.hasPrefix("llw")     // Low Latency WLAN
-
-                if isUp && !isLoopback && !isVirtualInterface, let dataPointer = pointer.pointee.ifa_data {
+                let isLink = pointer.pointee.ifa_addr?.pointee.sa_family == UInt8(AF_LINK)
+                if isUp && !isLoopback && isLink && externalInterfaces.contains(name),
+                   let dataPointer = pointer.pointee.ifa_data {
                     let data = dataPointer.assumingMemoryBound(to: if_data.self).pointee
-                    rx &+= UInt64(data.ifi_ibytes)
-                    tx &+= UInt64(data.ifi_obytes)
+                    bytes[name] = (UInt64(data.ifi_ibytes), UInt64(data.ifi_obytes))
                 }
 
                 if let next = pointer.pointee.ifa_next {
@@ -218,7 +202,7 @@ final class NetworkUsageMonitor: ObservableObject {
             freeifaddrs(first)
         }
 
-        return (rx, tx)
+        return bytes
     }
 
     func formattedSpeed(_ bytesPerSecond: Double) -> String {
@@ -370,11 +354,10 @@ final class NetworkUsageMonitor: ObservableObject {
 
     private func handleSystemWake() {
         LogManager.shared.log("System woke from sleep: todayDownloaded=\(todayDownloaded), todayUploaded=\(todayUploaded), resetting sample baseline and checking day change")
-        // 将 lastRx/lastTx 置 nil，确保唤醒后首次采样只建立基准值，
+        // 将接口基线置 nil，确保唤醒后首次采样只建立基准值，
         // 不把 Power Nap 期间累积的流量一次性计入当日统计，造成数值虚高
         sampleQueue.async { [weak self] in
-            self?.lastRx = nil
-            self?.lastTx = nil
+            self?.lastInterfaceBytes = nil
         }
         // 立即执行切日检测，不再等待最多 60 秒的定时器触发
         checkAndSaveForDayChange()

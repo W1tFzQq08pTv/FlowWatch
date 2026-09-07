@@ -19,6 +19,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LaunchAtLoginManager.shared.checkAndPrompt()
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            PerAppTrafficDetailWindowController.shared.show()
+        }
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         LogManager.shared.log("Application will terminate")
         monitor?.saveTrafficData()

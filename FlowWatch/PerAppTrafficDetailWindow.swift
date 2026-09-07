@@ -51,10 +51,11 @@ final class PerAppTrafficViewModel: ObservableObject {
     private var missingIconIDs: Set<String> = []
 
     func bind(to monitor: ProcessNetworkMonitor) {
-        cancellable = monitor.$appTrafficRates
+        cancellable = monitor.$scopedTrafficRates
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] rates in
+            .sink { [weak self] scopedRates in
                 guard let self else { return }
+                let rates = scopedRates[.external] ?? []
                 self.items = rates.map { rate in
                     if let icon = rate.icon {
                         self.iconCache[rate.id] = icon
