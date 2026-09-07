@@ -103,6 +103,8 @@ final class UpdateManager: NSObject, ObservableObject {
         registerPreferenceDefaults()
         loadCachedLatestVersion()
         clearCachedVersionIfNeeded()
+        let removed = downloadCache.cleanup(throughVersion: AppVersion.shortVersion, build: AppVersion.buildNumber)
+        if !removed.isEmpty { LogManager.shared.log("Removed \(removed.count) obsolete update cache files") }
         configureUpdater()
     }
 
@@ -545,6 +547,7 @@ final class UpdateManager: NSObject, ObservableObject {
         pendingResultAcknowledgement = nil
         immediateInstallationBlock = nil
         cacheServer.stop()
+        if let cachedUpdateFileURL { downloadCache.unprotect(cachedUpdateFileURL) }
         UpdateWindowController.shared.close()
     }
 
@@ -590,6 +593,7 @@ final class UpdateManager: NSObject, ObservableObject {
             build: update.build,
             expectedLength: update.downloadContentLength
         ) {
+            downloadCache.cleanup(throughVersion: update.version, build: update.build, keeping: [cached])
             cachedUpdateFileURL = cached
             status = .readyToInstall(update)
             if showWindow {
@@ -665,6 +669,7 @@ final class UpdateManager: NSObject, ObservableObject {
             continueInstallation()
             return
         }
+        downloadCache.protect(cachedUpdateFileURL)
         cacheServer.start(fileURL: cachedUpdateFileURL) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -782,6 +787,7 @@ extension UpdateManager: SPUUpdaterDelegate {
         currentUpdate = update
         status = .readyToInstall(update)
         cacheServer.stop()
+        if let cachedUpdateFileURL { downloadCache.unprotect(cachedUpdateFileURL) }
         cachedUpdateServerURL = nil
         LogManager.shared.log("Sparkle downloaded update \(item.displayVersionString)")
     }
