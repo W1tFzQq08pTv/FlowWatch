@@ -1324,13 +1324,17 @@ final class StatusBarController: NSObject, ObservableObject {
     private func performResetToday() {
         LogManager.shared.log("Reset today from status bar")
         monitor.resetTodayTraffic()
-        ProcessTrafficStorage.shared.clearTodayRecords()
+        for scope in TrafficAccountingScope.allCases {
+            ProcessTrafficStorage.storage(for: scope).clearTodayRecords()
+        }
     }
 
     private func performResetAllHistory() {
         LogManager.shared.log("Clear all history from status bar")
         monitor.clearAllTrafficHistory()
-        ProcessTrafficStorage.shared.clearAllRecords()
+        for scope in TrafficAccountingScope.allCases {
+            ProcessTrafficStorage.storage(for: scope).clearAllRecords()
+        }
     }
 
     @objc private func openSettings() {

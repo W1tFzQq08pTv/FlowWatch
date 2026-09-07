@@ -47,7 +47,21 @@ struct AppDailyTrafficRecord: Codable, Identifiable, Sendable {
 }
 
 final class ProcessTrafficStorage {
-    static let shared = ProcessTrafficStorage()
+    static let shared = ProcessTrafficStorage(scope: .external)
+    static let local = ProcessTrafficStorage(scope: .local)
+    static let other = ProcessTrafficStorage(scope: .other)
+    static let legacy = ProcessTrafficStorage(scope: .legacy)
+
+    static func storage(for scope: TrafficAccountingScope) -> ProcessTrafficStorage {
+        switch scope {
+        case .external: return shared
+        case .local: return local
+        case .other: return other
+        case .legacy: return legacy
+        }
+    }
+
+    private let scope: TrafficAccountingScope
 
     private var records: [AppDailyTrafficRecord] = []
     private var recordIndexByID: [String: Int] = [:]
@@ -57,7 +71,8 @@ final class ProcessTrafficStorage {
     private var saveTimer: DispatchSourceTimer?
     private let saveInterval: TimeInterval = 30
 
-    private init() {
+    private init(scope: TrafficAccountingScope) {
+        self.scope = scope
         loadRecords()
         startSaveTimer()
     }
@@ -65,7 +80,8 @@ final class ProcessTrafficStorage {
     private var filePath: URL {
         let appSupport = AppSupportPaths.applicationDirectory
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
-        return appSupport.appendingPathComponent("app_traffic.json")
+        let filename = scope == .legacy ? "app_traffic.json" : "app_traffic_\(scope.rawValue)_v2.json"
+        return appSupport.appendingPathComponent(filename)
     }
 
     private func loadRecords() {
