@@ -368,3 +368,22 @@
 
 "settings.smoothTransition.toggle" = "Smooth transition";
 "settings.smoothTransition.desc" = "Speed numbers transition smoothly instead of jumping instantly.";
+
+// Composable status bar
+"settings.layout.component.traffic" = "Upload / download";
+"settings.layout.component.animation" = "Animation";
+"settings.layout.component.signal" = "Minimal signal";
+"settings.layout.description" = "Drag a handle or name to reorder. The preview shows the menu bar from left to right. Keep at least one component enabled.";
+"settings.layout.preview" = "Left-to-right display order";
+"settings.layout.moveLeft" = "Move left";
+"settings.layout.moveRight" = "Move right";
+"settings.layout.direction" = "Directions";
+"settings.layout.direction.both" = "Upload and download";
+"settings.layout.direction.upload" = "Upload only";
+"settings.layout.direction.download" = "Download only";
+"settings.layout.arrangement" = "Number layout";
+"settings.layout.arrangement.stacked" = "Stacked";
+"settings.layout.arrangement.horizontal" = "Side by side";
+"settings.layout.downloadFirst" = "Download first (top / left)";
+
+"settings.layout.dragHint" = "Drag vertically to reorder. Press Esc or release outside the list to cancel.";
