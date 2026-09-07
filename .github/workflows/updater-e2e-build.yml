@@ -125,7 +125,7 @@ jobs:
           } > "$QA_OUTPUT_DIR/BUILD-METADATA.txt"
 
       - name: Upload signed target artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flowwatch-updater-e2e-target-${{ github.run_id }}
           path: |
