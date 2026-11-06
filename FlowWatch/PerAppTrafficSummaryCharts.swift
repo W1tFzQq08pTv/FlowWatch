@@ -603,7 +603,7 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
-        .help(
+        .flowWatchHelp(
             "\(seriesLabel(name: slice.displayName, isOther: slice.isOther)) · "
                 + PerAppSummaryChartFormatter.bytes(Double(slice.totalBytes))
         )
@@ -611,8 +611,8 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
 
     private var loadingCard: some View {
         VStack(spacing: 9) {
-            ProgressView()
-                .controlSize(.small)
+            FlowWatchProgressView()
+
             Text(l10n.t("perApp.chart.loading"))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
@@ -698,10 +698,7 @@ private struct PerAppSummaryChartCardModifier: ViewModifier {
     let accent: Color
 
     func body(content: Content) -> some View {
-        content
-            .overlay(alignment: .bottom) {
-                Divider().opacity(0.38)
-            }
+        content.flowWatchGlassPanel()
     }
 }
 

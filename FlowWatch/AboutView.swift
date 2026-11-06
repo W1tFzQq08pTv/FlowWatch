@@ -6,20 +6,27 @@ struct AboutView: View {
     @State private var isGitHubHovered = false
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 68, height: 68)
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        VStack(spacing: 20) {
+            ZStack {
+                FlowWatchLineSphere().frame(width: 164, height: 140)
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable().frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
+                    .allowsHitTesting(false)
+            }
 
             VStack(spacing: 4) {
                 Text(appName)
-                    .font(.title3.weight(.semibold))
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
 
                 Text(AppVersion.displayString)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+
+            Text(l10n.t("ui.aboutCaption"))
+                .font(.system(size: 12)).foregroundStyle(.secondary)
 
             Button {
                 openGitHub()
@@ -35,20 +42,17 @@ struct AboutView: View {
                         Color.primary.opacity(isGitHubHovered ? 0.08 : 0.035),
                         in: Circle()
                     )
-                    .overlay {
-                        Circle()
-                            .stroke(Color.primary.opacity(isGitHubHovered ? 0.16 : 0.09), lineWidth: 0.8)
-                    }
+
             }
-            .buttonStyle(.plain)
+            .buttonStyle(FlowWatchHoverButtonStyle())
             .contentShape(Circle())
             .onHover { isGitHubHovered = $0 }
-            .help(l10n.t("about.github"))
+            .flowWatchHelp(l10n.t("about.github"))
             .accessibilityLabel(l10n.t("about.github"))
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 26)
-        .frame(minWidth: 340, minHeight: 250)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .flowWatchWindowSurface()
     }
 

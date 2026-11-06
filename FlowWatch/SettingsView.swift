@@ -18,6 +18,7 @@ struct SettingsView: View {
     @AppStorage("mathCurveLoaderRandomSwitchIntervalMinutes") private var mathCurveLoaderRandomSwitchIntervalMinutes: Double = 10
     @AppStorage("logging.enabled") private var loggingEnabled: Bool = true
     @ObservedObject private var updateManager = UpdateManager.shared
+    @Namespace private var sidebarSelectionNamespace
     @State private var selectedSection: SettingsSection? = .general
     @State private var isShowingResetAlert = false
     @State private var resetAlertMode: ResetAlertMode?
@@ -26,6 +27,7 @@ struct SettingsView: View {
     @State private var launchAtLoginErrorMessage: String?
     @FocusState private var focusedField: FocusField?
     @EnvironmentObject private var l10n: LocalizationManager
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 0) {
@@ -52,44 +54,32 @@ struct SettingsView: View {
                 focusedField = nil
             }
         }
-        .alert(l10n.t("alert.reset.title"), isPresented: $isShowingResetAlert) {
-            Button(l10n.t("common.cancel"), role: .cancel) {}
-            Button(resetAlertMode == .allHistory ? l10n.t("common.clear") : l10n.t("common.reset"), role: .destructive) {
-                switch resetAlertMode {
-                case .today:
-                    NotificationCenter.default.post(name: .flowWatchResetToday, object: nil)
-                case .allHistory:
-                    NotificationCenter.default.post(name: .flowWatchResetAllHistory, object: nil)
-                case .none:
-                    break
+        .onChange(of: isShowingResetAlert) { isPresented in
+            guard isPresented else { return }
+            let mode = resetAlertMode
+            FlowWatchDialogController.shared.present(
+                title: l10n.t("alert.reset.title"),
+                message: l10n.t(mode == .allHistory ? "alert.reset.all" : "alert.reset.today"),
+                confirmTitle: l10n.t(mode == .allHistory ? "common.clear" : "common.reset"),
+                cancelTitle: l10n.t("common.cancel"), isDestructive: true,
+                completion: { confirmed in
+                    isShowingResetAlert = false
+                    guard confirmed else { return }
+                    if mode == .today { NotificationCenter.default.post(name: .flowWatchResetToday, object: nil) }
+                    if mode == .allHistory { NotificationCenter.default.post(name: .flowWatchResetAllHistory, object: nil) }
                 }
-            }
-        } message: {
-            switch resetAlertMode {
-            case .today:
-                Text(l10n.t("alert.reset.today"))
-            case .allHistory:
-                Text(l10n.t("alert.reset.all"))
-            case .none:
-                Text("")
-            }
+            )
         }
-        .alert(l10n.t("alert.launchAtLogin.errorTitle"), isPresented: Binding(
-            get: { launchAtLoginErrorMessage != nil },
-            set: { newValue in
-                if !newValue {
-                    launchAtLoginErrorMessage = nil
-                }
-            }
-        )) {
-            Button(l10n.t("common.ok")) {}
-        } message: {
-            Text(launchAtLoginErrorMessage ?? "")
+        .onChange(of: launchAtLoginErrorMessage) { message in
+            guard let message else { return }
+            FlowWatchDialogController.shared.present(title: l10n.t("alert.launchAtLogin.errorTitle"),
+                message: message, confirmTitle: l10n.t("common.ok"), completion: { _ in launchAtLoginErrorMessage = nil })
         }
     }
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 16) {
+            FlowWatchSidebarHeader()
             VStack(spacing: 6) {
                 ForEach(SettingsSection.allCases) { section in
                     sidebarRow(section)
@@ -100,48 +90,14 @@ struct SettingsView: View {
         }
         .padding(16)
         .frame(width: sidebarWidth)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+        .background(FlowWatchPalette.canvas)
     }
 
     private func sidebarRow(_ section: SettingsSection) -> some View {
-        let isSelected = currentSection == section
-
-        return Button {
-            selectedSection = section
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: section.systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isSelected ? FlowWatchPalette.accent : Color.secondary)
-                    .frame(width: 28, height: 28)
-
-                Text(l10n.t(section.titleKey))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.primary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                isSelected ? Color.primary.opacity(0.045) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .overlay(alignment: .leading) {
-                if isSelected {
-                    Capsule()
-                        .fill(FlowWatchPalette.accent)
-                        .frame(width: 3, height: 20)
-                        .padding(.leading, 2)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        FlowWatchNavigationRow(
+            title: l10n.t(section.titleKey), icon: section.systemImage,
+            isSelected: currentSection == section, selectionNamespace: sidebarSelectionNamespace
+        ) { selectedSection = section }
     }
 
     private var currentSection: SettingsSection {
@@ -164,7 +120,7 @@ struct SettingsView: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(l10n.t(currentSection.titleKey))
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
                 if let subtitleKey = currentSection.subtitleKey {
                     Text(l10n.t(subtitleKey))
                         .font(.subheadline)
@@ -174,17 +130,24 @@ struct SettingsView: View {
 
             Spacer()
         }
-        .padding(.bottom, 12)
-        .overlay(alignment: .bottom) {
-            Divider()
-                .opacity(0.45)
-        }
+        .padding(.bottom, 8)
     }
 
     @ViewBuilder
     private var selectedContent: some View {
         switch currentSection {
         case .general:
+            HStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("FlowWatch").font(.system(size: 30, weight: .semibold, design: .rounded))
+                    Text(l10n.t("ui.settingsCaption")).font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(l10n.t("ui.aboutCaption")).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                FlowWatchLineSphere().frame(width: 150, height: 150)
+            }
+            .padding(24)
+            .flowWatchGlassPanel()
             settingsPanel(title: l10n.t("settings.group.language")) {
                 optionSelector(
                     AppLanguage.allCases.map { (languageLabel($0), $0) },
@@ -265,6 +228,7 @@ struct SettingsView: View {
                                     step: 1,
                                     tint: currentSection.tint
                                 )
+                                .accessibilityLabel(l10n.t("settings.curveLoader.randomSwitchInterval"))
                             }
                             .padding(.vertical, 8)
                         }
@@ -286,6 +250,7 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         ModernSlider(value: minimalSignalBlinkSpeedBinding, range: 0...100, step: 1, tint: currentSection.tint)
+                            .accessibilityLabel(l10n.t(statusBarLayout.enabled.contains(.animation) ? "settings.curveLoader.animationSpeed" : "settings.minimalSignal.blinkSpeed"))
                     }
                     .padding(.vertical, 8)
                 }
@@ -333,6 +298,8 @@ struct SettingsView: View {
                             strokeOpacity: focusedField == .maxColorRate ? 0.24 : 0.12,
                             shadowOpacity: 0.02
                         )
+                        .flowWatchHover(.field)
+                        .accessibilityLabel(l10n.t("settings.maxColorRate.limitTitle"))
                         Text("Mbps")
                             .foregroundStyle(.secondary)
                     }
@@ -349,6 +316,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     ModernSlider(value: colorRatePercentBinding, range: 0...100, step: 1, tint: currentSection.tint)
+                        .accessibilityLabel(l10n.t("settings.maxColorRate.intensityTitle"))
                     colorPreviewStrip
                 }
                 .padding(.vertical, 8)
@@ -410,11 +378,11 @@ struct SettingsView: View {
                         Button(l10n.t("menu.checkUpdate")) {
                             updateManager.checkForUpdates(userInitiated: true)
                         }
-                        .buttonStyle(ModernActionButtonStyle(tint: currentSection.tint))
+                        .buttonStyle(FlowWatchActionButtonStyle(tint: currentSection.tint))
                         Button(l10n.t("update.recheckSkipped")) {
                             updateManager.recheckSkippedVersions()
                         }
-                        .buttonStyle(ModernActionButtonStyle(tint: currentSection.tint))
+                        .buttonStyle(FlowWatchActionButtonStyle(tint: currentSection.tint))
                     }
                 }
                 .padding(.vertical, 8)
@@ -444,7 +412,7 @@ struct SettingsView: View {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                         LogManager.shared.log("Open logs directory from settings")
                     }
-                    .buttonStyle(ModernActionButtonStyle(tint: currentSection.tint))
+                    .buttonStyle(FlowWatchActionButtonStyle(tint: currentSection.tint))
                 }
             }
         case .perApp:
@@ -478,12 +446,12 @@ struct SettingsView: View {
                             resetAlertMode = .today
                             isShowingResetAlert = true
                         }
-                        .buttonStyle(ModernActionButtonStyle(tint: .red, isDestructive: true))
+                        .buttonStyle(FlowWatchActionButtonStyle(tint: .red, isDestructive: true))
                         Button(l10n.t("settings.data.clearAllHistory"), role: .destructive) {
                             resetAlertMode = .allHistory
                             isShowingResetAlert = true
                         }
-                        .buttonStyle(ModernActionButtonStyle(tint: .red, isDestructive: true))
+                        .buttonStyle(FlowWatchActionButtonStyle(tint: .red, isDestructive: true))
                     }
                 }
                 .padding(.vertical, 8)
@@ -601,11 +569,9 @@ struct SettingsView: View {
 
             content()
         }
-        .padding(.vertical, 10)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .overlay(alignment: .bottom) {
-            Divider().opacity(0.38)
-        }
+        .flowWatchGlassPanel()
     }
 
     private func settingsRow<Control: View>(
@@ -625,7 +591,7 @@ struct SettingsView: View {
                 }
             }
             Spacer(minLength: 16)
-            control()
+            control().accessibilityElement(children: .contain).accessibilityLabel(title)
         }
         .padding(.vertical, 6)
     }
@@ -667,7 +633,7 @@ struct SettingsView: View {
             return .primary
         }
         let ratio = max(0, min(mbps / maxRate, 1))
-        let start = NSColor.labelColor.usingColorSpace(.sRGB) ?? .labelColor
+        let start = colorScheme == .dark ? NSColor(srgbRed: 0.957, green: 0.957, blue: 0.949, alpha: 1) : NSColor(srgbRed: 0.098, green: 0.102, blue: 0.11, alpha: 1)
         let yellow = NSColor.systemYellow.usingColorSpace(.sRGB) ?? .systemYellow
         let red = NSColor.systemRed.usingColorSpace(.sRGB) ?? .systemRed
 
@@ -743,32 +709,7 @@ struct SettingsView: View {
         _ options: [(String, Value)],
         selection: Binding<Value>
     ) -> some View {
-        HStack(spacing: 4) {
-            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-                let isSelected = selection.wrappedValue == option.1
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        selection.wrappedValue = option.1
-                    }
-                } label: {
-                    Text(option.0)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .frame(minWidth: 46)
-                        .flowWatchGlassButtonSurface(tint: currentSection.tint, isSelected: isSelected, cornerRadius: 7)
-                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(3)
-        .flowWatchGlassPanel(cornerRadius: 9, material: .thin)
-        .animation(.easeInOut(duration: 0.16), value: selection.wrappedValue)
+        FlowWatchSegmentedControl(options: options, selection: selection)
     }
 
     private enum ResetAlertMode {
@@ -988,21 +929,23 @@ struct ModernSwitch: View {
     @Binding var isOn: Bool
     let tint: Color
     var isEnabled: Bool = true
+    @Environment(\.isEnabled) private var environmentEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button {
-            guard isEnabled else { return }
-            withAnimation(.spring(response: 0.24, dampingFraction: 0.78)) {
+            guard isEnabled && environmentEnabled else { return }
+            withAnimation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.85)) {
                 isOn.toggle()
             }
         } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
                 Capsule()
-                    .fill(isOn ? tint : Color.secondary.opacity(0.28))
+                    .fill(isOn ? FlowWatchPalette.ink : FlowWatchPalette.well)
                     .frame(width: 46, height: 26)
 
                 Circle()
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .fill(isOn ? FlowWatchPalette.inverse : FlowWatchPalette.elevated)
                     .frame(width: 20, height: 20)
                     .overlay(
                         Circle()
@@ -1013,33 +956,13 @@ struct ModernSwitch: View {
             }
             .overlay(
                 Capsule()
-                    .stroke(isOn ? tint : Color.secondary.opacity(0.38), lineWidth: 1)
+                    .stroke(FlowWatchPalette.edge.opacity(0.6), lineWidth: 1)
             )
-            .opacity(isEnabled ? 1 : 0.45)
+            .opacity(isEnabled && environmentEnabled ? 1 : 0.4)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FlowWatchHoverButtonStyle())
         .disabled(!isEnabled)
-        .accessibilityValue(isOn ? "On" : "Off")
-    }
-}
-
-private struct ModernActionButtonStyle: ButtonStyle {
-    let tint: Color
-    var isDestructive: Bool = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(isDestructive ? Color.red : tint)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .flowWatchGlassButtonSurface(
-                tint: isDestructive ? .red : tint,
-                isSelected: configuration.isPressed,
-                cornerRadius: 7
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+        .accessibilityValue(L10n.t(isOn ? "ui.on" : "ui.off"))
     }
 }
 
@@ -1048,45 +971,69 @@ private struct ModernSlider: View {
     let range: ClosedRange<Double>
     let step: Double
     let tint: Color
+    @State private var activeBar: Double?
+    @State private var previousBar: Double?
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
             let width = max(geometry.size.width, 1)
             let progress = CGFloat(normalizedValue)
 
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(.thinMaterial)
-                    .frame(height: 8)
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                    )
-
-                Capsule()
-                    .fill(tint.opacity(0.82))
-                    .frame(width: width * progress, height: 8)
-
-                Circle()
-                    .fill(Color(nsColor: .controlBackgroundColor))
-                    .frame(width: 18, height: 18)
-                    .shadow(color: Color.black.opacity(0.14), radius: 3, x: 0, y: 1)
-                    .overlay(
-                        Circle()
-                            .stroke(Color.primary.opacity(0.20), lineWidth: 1.25)
-                    )
-                    .offset(x: max(0, min(width - 18, width * progress - 9)))
+            HStack(alignment: .center, spacing: 0) {
+                ForEach(0..<64) { index in
+                    let distance = activeBar.map { abs(Double(index) - $0) } ?? 100
+                    let trail = previousBar.map { abs(Double(index) - $0) } ?? 100
+                    let lift = reduceMotion ? 0 : 16 * exp(-pow(distance / 3, 2)) + 6 * exp(-pow(trail / 5, 2))
+                    Capsule()
+                        .fill(Double(index) / 63 <= Double(progress) ? FlowWatchPalette.ink : FlowWatchPalette.ink.opacity(0.13))
+                        .frame(width: 3, height: 20 + lift)
+                        .frame(maxWidth: .infinity)
+                }
             }
-            .frame(height: 28)
+            .frame(height: 48)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { gesture in
-                        updateValue(locationX: gesture.location.x, width: width)
+            .onContinuousHover { phase in
+                guard isEnabled else { activeBar = nil; previousBar = nil; return }
+                switch phase {
+                case .active(let location):
+                    withAnimation(reduceMotion ? nil : .interactiveSpring(response: 0.18, dampingFraction: 0.72)) {
+                        activeBar = Double(location.x / width) * 63
                     }
+                case .ended:
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.65)) { activeBar = nil; previousBar = nil }
+                }
+            }
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { gesture in
+                    previousBar = activeBar
+                    activeBar = Double(gesture.location.x / width) * 63
+                    updateValue(locationX: gesture.location.x, width: width)
+                }
+                .onEnded { _ in
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.65)) { activeBar = nil; previousBar = nil }
+                }
             )
         }
-        .frame(height: 28)
+        .frame(height: 48)
+        .focusable()
+        .onMoveCommand { direction in
+            if direction == .left || direction == .down { adjust(-1) }
+            if direction == .right || direction == .up { adjust(1) }
+        }
+        .accessibilityValue(String(format: "%.0f", value))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: adjust(1)
+            case .decrement: adjust(-1)
+            @unknown default: break
+            }
+        }
+    }
+
+    private func adjust(_ direction: Double) {
+        value = min(range.upperBound, max(range.lowerBound, value + direction * (step > 0 ? step : (range.upperBound - range.lowerBound) / 100)))
     }
 
     private var normalizedValue: Double {

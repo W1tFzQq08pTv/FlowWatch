@@ -22,7 +22,11 @@ final class StatusBarController: NSObject, ObservableObject {
     private let statusItem: NSStatusItem
     private let updateManager = UpdateManager.shared
     private var dynamicIconView: NSView?
-    private weak var updateMenuItem: NSMenuItem?
+    private var statusBitmapContext: CGContext?
+    private let statusBitmapColorSpace = CGColorSpaceCreateDeviceRGB()
+    private let quickPanel = FlowWatchFloatingPanel()
+    private let quickPanelState = FlowWatchQuickPanelState()
+    private var shortcutMonitor: Any?
     private var maxColorRateMbps: Double {
         get {
             cachedMaxColorRateMbps
@@ -60,6 +64,8 @@ final class StatusBarController: NSObject, ObservableObject {
     private var targetTodayDownloaded: Double = 0
     private var targetTodayUploaded: Double = 0
     private var lastRenderedKey: String = ""
+    private var trafficImageCache: (key: String, image: NSImage)?
+    private var lastAccessibilityValue = ""
     private var animationTimer: DispatchSourceTimer?
     private var animationStartTime: CFTimeInterval = 0
     private var animationDuration: CFTimeInterval {
@@ -97,7 +103,8 @@ final class StatusBarController: NSObject, ObservableObject {
     private let curveLoaderPresetTransitionDuration: CFTimeInterval = 0.65
     private let curveLoaderImageCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
-        cache.countLimit = 240
+        cache.countLimit = 32
+        cache.totalCostLimit = 512 * 1024
         return cache
     }()
     private var cachedMaxColorRateMbps: Double = 100
@@ -136,7 +143,6 @@ final class StatusBarController: NSObject, ObservableObject {
     private var isShowingQuitConfirmation = false
 
     private var cancellables = Set<AnyCancellable>()
-    private var menu: NSMenu = NSMenu()
 
     init(monitor: NetworkUsageMonitor, processMonitor: ProcessNetworkMonitor) {
         self.monitor = monitor
@@ -150,16 +156,39 @@ final class StatusBarController: NSObject, ObservableObject {
         bindMonitor()
         bindUserDefaults()
         bindNotifications()
-        bindUpdateManager()
-        bindProcessMonitor()
         updateStatusButtonContent()
         scheduleAutomaticUpdateCheck()
     }
 
     private func configureStatusButton() {
         guard let button = statusItem.button else { return }
-        rebuildMenu()
-        statusItem.menu = menu
+        button.target = self
+        button.action = #selector(toggleQuickPanel)
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.setAccessibilityLabel("FlowWatch")
+        let hoverView = StatusBarHoverView(frame: button.bounds.insetBy(dx: 1, dy: 2))
+        hoverView.autoresizingMask = [.width, .height]
+        button.addSubview(hoverView, positioned: .below, relativeTo: nil)
+        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.modifierFlags.contains(.command) else { return event }
+            #if DEBUG
+            // Runtime-only appearance previews keep visual QA out of the user's system preferences.
+            if event.modifierFlags.contains(.option) {
+                switch event.keyCode {
+                case 18: NSApp.appearance = NSAppearance(named: .aqua); return nil
+                case 19: NSApp.appearance = NSAppearance(named: .darkAqua); return nil
+                case 29: NSApp.appearance = nil; return nil
+                case 49: self.toggleQuickPanel(); return nil
+                default: break
+                }
+            }
+            #endif
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case ",": self.quickPanel.hide(); self.openSettings(); return nil
+            case "q": self.quickPanel.hide(); self.quitApp(); return nil
+            default: return event
+            }
+        }
         button.imagePosition = .imageOnly
         button.focusRingType = .none
     }
@@ -167,7 +196,10 @@ final class StatusBarController: NSObject, ObservableObject {
     private func bindMonitor() {
         Publishers.CombineLatest4(monitor.$downloadBps, monitor.$uploadBps,
                                   monitor.$todayDownloaded, monitor.$todayUploaded)
-            .throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
+            .debounce(for: .milliseconds(10), scheduler: DispatchQueue.main)
+            .removeDuplicates { previous, next in
+                previous.0 == next.0 && previous.1 == next.1 && previous.2 == next.2 && previous.3 == next.3
+            }
             .sink { [weak self] down, up, todayDown, todayUp in
                 guard let self else { return }
                 let todayDownD = Double(todayDown)
@@ -306,6 +338,14 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     private func bindNotifications() {
+        NotificationCenter.default.publisher(for: .flowWatchOpenSettings)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.quickPanel.hide(); self?.openSettings() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .flowWatchQuitRequested)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.quickPanel.hide(); self?.quitApp() }
+            .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .flowWatchResetToday)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -320,18 +360,10 @@ final class StatusBarController: NSObject, ObservableObject {
             }
             .store(in: &cancellables)
         
-        NotificationCenter.default.publisher(for: .flowWatchLanguageChanged)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.rebuildMenu()
-            }
-            .store(in: &cancellables)
-
         NotificationCenter.default.publisher(for: .flowWatchCheckForUpdates)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateManager.startAutomaticUpdateChecks()
-                self?.refreshUpdateMenuItem()
             }
             .store(in: &cancellables)
 
@@ -374,26 +406,6 @@ final class StatusBarController: NSObject, ObservableObject {
             .store(in: &cancellables)
     }
 
-    private func bindProcessMonitor() {
-        processMonitor.$isEnabled
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.rebuildMenu()
-            }
-            .store(in: &cancellables)
-    }
-
-    private func bindUpdateManager() {
-        Publishers.CombineLatest(updateManager.$status, updateManager.$canCheckForUpdates)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.refreshUpdateMenuItem()
-            }
-            .store(in: &cancellables)
-    }
-
     /// 颜色量化步长（256 KB/s），对应 100 Mbps 上限约 50 级可辨色阶
     private let colorQuantStep: Double = 256_000
 
@@ -405,16 +417,25 @@ final class StatusBarController: NSObject, ObservableObject {
     private func composedRenderKey(download: Double, upload: Double, downloaded: Double, uploaded: Double) -> String {
         var parts = [layoutRenderKey, String(isColoringEnabled), String(colorRatePercent), String(maxColorRateMbps)]
         if layout.enabled.contains(.traffic) {
-            parts += [monitor.fixedWidthCompactSpeed(download), monitor.fixedWidthCompactSpeed(upload),
-                      monitor.fixedWidthDataAmount(UInt64(max(0, downloaded))),
-                      monitor.fixedWidthDataAmount(UInt64(max(0, uploaded))),
-                      String(Int(download / colorQuantStep)), String(Int(upload / colorQuantStep))]
+            parts.append(trafficRenderKey(download: download, upload: upload, downloaded: downloaded, uploaded: uploaded))
         }
         if layout.enabled.contains(.signal) {
             parts.append(minimalSignalRenderKey(downloadBps: download, uploadBps: upload))
         }
         if layout.enabled.contains(.animation) {
             parts.append(curveLoaderRenderKey(downloadBps: download, uploadBps: upload))
+        }
+        return parts.joined(separator: "|")
+    }
+
+    private func trafficRenderKey(download: Double, upload: Double, downloaded: Double, uploaded: Double) -> String {
+        var parts = [layoutRenderKey, String(isColoringEnabled), String(colorRatePercent), String(maxColorRateMbps)]
+        for isUpload in [false, true] {
+            guard layout.direction == .both || (isUpload ? layout.direction == .upload : layout.direction == .download) else { continue }
+            let speed = isUpload ? upload : download
+            if layout.content != .total { parts.append(monitor.fixedWidthCompactSpeed(speed)) }
+            if layout.content != .speed { parts.append(monitor.fixedWidthDataAmount(UInt64(max(0, isUpload ? uploaded : downloaded)))) }
+            if isColoringEnabled { parts.append(String(Int(speed / colorQuantStep))) }
         }
         return parts.joined(separator: "|")
     }
@@ -437,24 +458,35 @@ final class StatusBarController: NSObject, ObservableObject {
         }
         let gap: CGFloat = 5
         let width = images.reduce(CGFloat(0)) { $0 + $1.size.width } + CGFloat(max(0, images.count - 1)) * gap
-        let image = NSImage(size: NSSize(width: max(18, width), height: 18), flipped: false) { _ in
-            var x: CGFloat = 0
-            for image in images {
-                image.draw(in: NSRect(x: x, y: (18 - image.size.height) / 2,
-                                     width: image.size.width, height: image.size.height))
-                x += image.size.width + gap
+        let size = NSSize(width: max(18, width), height: 18)
+        let length = max(24, width + 8)
+        if statusItem.length != length { statusItem.length = length }
+        if !isDynamicStatusMode || !setDynamicStatusComponents(images, size: size, in: button) {
+            let image = NSImage(size: size, flipped: false) { _ in
+                var x: CGFloat = 0
+                for image in images {
+                    image.draw(in: NSRect(x: x, y: (18 - image.size.height) / 2,
+                                         width: image.size.width, height: image.size.height))
+                    x += image.size.width + gap
+                }
+                return true
             }
-            return true
+            setStatusButtonImage(image, into: button, prefersDynamicIconView: isDynamicStatusMode)
         }
-        statusItem.length = max(24, width + 8)
-        setStatusButtonImage(image, into: button, prefersDynamicIconView: isDynamicStatusMode)
-        button.setAccessibilityLabel("FlowWatch")
-        button.toolTip = "↑ \(monitor.fixedWidthCompactSpeed(displayedUploadBps))  ↓ \(monitor.fixedWidthCompactSpeed(displayedDownloadBps))"
+        let accessibilityValue = "↑ \(monitor.fixedWidthCompactSpeed(displayedUploadBps))  ↓ \(monitor.fixedWidthCompactSpeed(displayedDownloadBps))"
+        if accessibilityValue != lastAccessibilityValue {
+            button.setAccessibilityValue(accessibilityValue)
+            lastAccessibilityValue = accessibilityValue
+        }
     }
 
     private var isDynamicStatusMode: Bool { layout.isAnimated }
 
     private func makeTrafficImage() -> NSImage {
+        let key = trafficRenderKey(download: displayedDownloadBps, upload: displayedUploadBps,
+                                   downloaded: displayedTodayDownloaded, uploaded: displayedTodayUploaded)
+            + "|\(statusItem.button?.window?.backingScaleFactor ?? 2)"
+        if let cached = trafficImageCache, cached.key == key { return cached.image }
         var directions: [Bool] = layout.direction == .upload ? [true] : layout.direction == .download ? [false] : [true, false]
         if layout.downloadFirst { directions.reverse() }
         let stacked = layout.arrangement == .stacked && directions.count == 2
@@ -475,7 +507,7 @@ final class StatusBarController: NSObject, ObservableObject {
         }
         let width = stacked ? rows.map { $0.size().width }.max() ?? 0
             : rows.reduce(CGFloat(0)) { $0 + $1.size().width } + CGFloat(rows.count - 1) * 6
-        return NSImage(size: NSSize(width: ceil(width), height: 18), flipped: false) { _ in
+        let image = rasterizedStatusImage(size: NSSize(width: ceil(width), height: 18)) { _ in
             var x: CGFloat = 0
             for (index, row) in rows.enumerated() {
                 let size = row.size()
@@ -485,6 +517,30 @@ final class StatusBarController: NSObject, ObservableObject {
             }
             return true
         }
+        trafficImageCache = (key, image)
+        return image
+    }
+
+    private func rasterizedStatusImage(size: NSSize, drawingHandler: @escaping (NSRect) -> Bool) -> NSImage {
+        let scale = statusItem.button?.window?.backingScaleFactor ?? 2
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: max(1, Int(ceil(size.width * scale))),
+            pixelsHigh: max(1, Int(ceil(size.height * scale))), bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+            bitmapFormat: [.alphaFirst], bytesPerRow: 0, bitsPerPixel: 0
+        ), let graphics = NSGraphicsContext(bitmapImageRep: bitmap) else {
+            return NSImage(size: size, flipped: false, drawingHandler: drawingHandler)
+        }
+        bitmap.size = size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphics
+        graphics.cgContext.clear(CGRect(x: 0, y: 0, width: bitmap.pixelsWide, height: bitmap.pixelsHigh))
+        graphics.cgContext.scaleBy(x: scale, y: scale)
+        _ = drawingHandler(NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: size)
+        image.addRepresentation(bitmap)
+        return image
     }
 
     private func colorForSpeed(_ bytesPerSecond: Double) -> NSColor {
@@ -676,7 +732,7 @@ final class StatusBarController: NSObject, ObservableObject {
         cancelStatusAnimationTimer(resetCurveState: false)
 
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(intervalMilliseconds))
+        timer.schedule(deadline: .now(), repeating: .milliseconds(intervalMilliseconds), leeway: .milliseconds(10))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             if self.isDynamicStatusMode {
@@ -781,7 +837,9 @@ final class StatusBarController: NSObject, ObservableObject {
         ) else {
             return nil
         }
-        curveLoaderImageCache.setObject(image, forKey: key)
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let cost = max(1, Int(size.width * size.height * scale * scale * 4))
+        curveLoaderImageCache.setObject(image, forKey: key, cost: cost)
         return image
     }
 
@@ -839,6 +897,47 @@ final class StatusBarController: NSObject, ObservableObject {
 
         downloadColor.setFill()
         NSBezierPath(ovalIn: NSRect(x: originX, y: 2, width: dotSize, height: dotSize)).fill()
+    }
+
+    private func setDynamicStatusComponents(_ images: [NSImage], size: NSSize, in button: NSStatusBarButton) -> Bool {
+        let scale = button.window?.backingScaleFactor ?? 2
+        let pixelWidth = max(1, Int(ceil(size.width * scale)))
+        let pixelHeight = max(1, Int(ceil(size.height * scale)))
+        if statusBitmapContext?.width != pixelWidth || statusBitmapContext?.height != pixelHeight {
+            statusBitmapContext = CGContext(data: nil, width: pixelWidth, height: pixelHeight,
+                                            bitsPerComponent: 8, bytesPerRow: 0,
+                                            space: statusBitmapColorSpace,
+                                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        }
+        guard let context = statusBitmapContext else { return false }
+        context.clear(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+        context.saveGState()
+        context.scaleBy(x: scale, y: scale)
+        var x: CGFloat = 0
+        for image in images {
+            let bitmap = image.representations.compactMap { ($0 as? NSBitmapImageRep)?.cgImage }.first
+            var rect = NSRect(origin: .zero, size: image.size)
+            guard let cgImage = bitmap ?? image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else {
+                context.restoreGState()
+                return false
+            }
+            context.draw(cgImage, in: CGRect(x: x, y: (size.height - image.size.height) / 2,
+                                             width: image.size.width, height: image.size.height))
+            x += image.size.width + 5
+        }
+        context.restoreGState()
+        guard let cgImage = context.makeImage() else { return false }
+        if !button.title.isEmpty { button.title = "" }
+        if button.image != nil { button.image = nil }
+        let iconView = ensureDynamicIconView(in: button)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        iconView.layer?.contents = cgImage
+        iconView.layer?.contentsScale = scale
+        CATransaction.commit()
+        iconView.isHidden = false
+        positionDynamicIconView(iconView, in: button, imageSize: size)
+        return true
     }
 
     private func setStatusButtonImage(
@@ -907,6 +1006,7 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     private func removeDynamicIconView() {
+        statusBitmapContext = nil
         dynamicIconView?.layer?.contents = nil
         dynamicIconView?.removeFromSuperview()
         dynamicIconView = nil
@@ -953,11 +1053,9 @@ final class StatusBarController: NSObject, ObservableObject {
     @objc private func checkForUpdates() {
         LogManager.shared.log("Check for updates from status bar")
         if updateManager.performCachedUpdateAction() {
-            refreshUpdateMenuItem()
             return
         }
         updateManager.checkForUpdates(userInitiated: true)
-        refreshUpdateMenuItem()
     }
 
     @objc private func quitApp() {
@@ -971,57 +1069,18 @@ final class StatusBarController: NSObject, ObservableObject {
         guard !isShowingQuitConfirmation else { return }
         isShowingQuitConfirmation = true
 
-        let alert = NSAlert()
-        alert.messageText = LocalizationManager.shared.t("quit.confirm.title")
-        alert.informativeText = LocalizationManager.shared.t("quit.confirm.message")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: LocalizationManager.shared.t("common.cancel"))
-        alert.addButton(withTitle: LocalizationManager.shared.t("common.quit"))
-
-        // 状态栏菜单触发退出时使用独立 modal alert，避免挂到某个窗口的 sheet 后
-        // 造成窗口无法关闭、确认框不可见的情况。
-        NSApp.activate(ignoringOtherApps: true)
-        LogManager.shared.log("Present quit confirmation alert")
-
-        let response = alert.runModal()
-        isShowingQuitConfirmation = false
-        LogManager.shared.log("Quit confirmation response: \(response.rawValue)")
-
-        if response == .alertSecondButtonReturn {
-            LogManager.shared.log("Quit confirmed, terminating app")
-            NSApplication.shared.terminate(nil)
-        } else {
-            LogManager.shared.log("Quit cancelled")
-        }
+        FlowWatchDialogController.shared.present(
+            title: L10n.t("quit.confirm.title"), message: L10n.t("quit.confirm.message"),
+            confirmTitle: L10n.t("common.quit"), cancelTitle: L10n.t("common.cancel"), isDestructive: true,
+            completion: { [weak self] confirmed in
+                self?.isShowingQuitConfirmation = false
+                if confirmed { NSApplication.shared.terminate(nil) }
+            }
+        )
     }
 
     private func scheduleAutomaticUpdateCheck() {
         updateManager.startAutomaticUpdateChecks()
-    }
-
-    private func refreshUpdateMenuItem() {
-        guard let updateMenuItem else { return }
-        let title = updateMenuTitle(for: updateManager.status)
-        updateMenuItem.attributedTitle = nil
-        updateMenuItem.title = title
-        updateMenuItem.isEnabled = updateManager.canActivateUpdateMenu
-
-        switch updateManager.status {
-        case .updateAvailable, .downloading, .readyToInstall, .installOnQuit, .remindLater, .installing:
-            applyUpdateMenuHighlight(to: updateMenuItem, title: title)
-        default:
-            break
-        }
-    }
-
-    private func applyUpdateMenuHighlight(to updateMenuItem: NSMenuItem, title: String) {
-        let baseFont = NSFont.menuFont(ofSize: 0)
-        let boldFont = NSFontManager.shared.convert(baseFont, toHaveTrait: .boldFontMask)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.labelColor,
-            .font: boldFont
-            ]
-            updateMenuItem.attributedTitle = NSAttributedString(string: title, attributes: attributes)
     }
 
     private func updateMenuTitle(for status: UpdateManager.UpdateStatus) -> String {
@@ -1183,52 +1242,57 @@ final class StatusBarController: NSObject, ObservableObject {
         }
     }
 
-    private func rebuildMenu() {
-        let newMenu = NSMenu()
-        let statisticsItem = NSMenuItem(title: LocalizationManager.shared.t("menu.statisticsDetail"), action: #selector(openStatisticsDetail), keyEquivalent: "")
-        statisticsItem.target = self
-        statisticsItem.image = menuSymbol(named: "chart.bar.xaxis", accessibilityDescription: statisticsItem.title)
-        newMenu.addItem(statisticsItem)
-        if processMonitor.isEnabled {
-            let perAppItem = NSMenuItem(title: LocalizationManager.shared.t("menu.perAppTraffic"), action: #selector(openPerAppDetail), keyEquivalent: "")
-            perAppItem.target = self
-            perAppItem.image = menuSymbol(named: "chart.pie", accessibilityDescription: perAppItem.title)
-            newMenu.addItem(perAppItem)
-        }
-        newMenu.addItem(.separator())
-        let settingsItem = NSMenuItem(title: LocalizationManager.shared.t("menu.settings"), action: #selector(openSettings), keyEquivalent: ",")
-        settingsItem.keyEquivalentModifierMask = [.command]
-        settingsItem.target = self
-        settingsItem.image = menuSymbol(named: "gearshape", accessibilityDescription: settingsItem.title)
-        newMenu.addItem(settingsItem)
-        let checkUpdateItem = NSMenuItem(title: LocalizationManager.shared.t("menu.checkUpdate"), action: #selector(checkForUpdates), keyEquivalent: "")
-        checkUpdateItem.target = self
-        checkUpdateItem.image = menuSymbol(named: "arrow.up.circle", accessibilityDescription: checkUpdateItem.title)
-        updateMenuItem = checkUpdateItem
-        newMenu.addItem(checkUpdateItem)
-        let aboutItem = NSMenuItem(title: LocalizationManager.shared.t("menu.about"), action: #selector(openAbout), keyEquivalent: "")
-        aboutItem.target = self
-        aboutItem.image = menuSymbol(named: "info.circle", accessibilityDescription: aboutItem.title)
-        newMenu.addItem(aboutItem)
-        newMenu.addItem(.separator())
-        let quitItem = NSMenuItem(title: LocalizationManager.shared.t("menu.quit"), action: #selector(quitApp), keyEquivalent: "q")
-        quitItem.target = self
-        quitItem.image = menuSymbol(named: "power", accessibilityDescription: quitItem.title)
-        newMenu.addItem(quitItem)
-        menu = newMenu
-        statusItem.menu = menu
-        refreshUpdateMenuItem()
+    @objc private func toggleQuickPanel() {
+        if quickPanel.isVisible { quickPanel.hide(); return }
+        guard let button = statusItem.button else { return }
+        quickPanelState.focusedTarget = nil
+        let content = FlowWatchQuickPanelView(
+            monitor: monitor, processMonitor: processMonitor, state: quickPanelState,
+            updateTitle: { [weak self] in
+                guard let self else { return "" }
+                return self.updateMenuTitle(for: self.updateManager.status)
+            }, action: { [weak self] action in self?.performQuickAction(action) }
+        )
+        .environmentObject(LocalizationManager.shared)
+        quickPanel.show(content: content, anchor: button, onKey: { [weak self] event in
+            guard let self, !event.modifierFlags.contains(.command) else { return false }
+            switch event.keyCode {
+            case 123: self.quickPanelState.advance(-1)
+            case 124: self.quickPanelState.advance(1)
+            case 48, 125, 126:
+                self.quickPanelState.moveFocus(
+                    backward: event.keyCode == 126 || (event.keyCode == 48 && event.modifierFlags.contains(.shift)),
+                    perAppEnabled: self.processMonitor.isEnabled, updateEnabled: self.updateManager.canActivateUpdateMenu
+                )
+            case 36, 49, 76:
+                guard let target = self.quickPanelState.focusedTarget else { return false }
+                switch target {
+                case .action(let action):
+                    guard action != .perApp || self.processMonitor.isEnabled else { return true }
+                    guard action != .update || self.updateManager.canActivateUpdateMenu else { return true }
+                    self.performQuickAction(action)
+                }
+            default: return false
+            }
+            return true
+        }) { [weak self] in self?.statusItem.button?.highlight(false) }
+        button.highlight(true)
     }
 
-    private func menuSymbol(named name: String, accessibilityDescription: String) -> NSImage? {
-        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: accessibilityDescription)?
-            .withSymbolConfiguration(configuration)
-        image?.isTemplate = true
-        return image
+    private func performQuickAction(_ action: FlowWatchQuickPanelView.Action) {
+        quickPanel.hide()
+        switch action {
+        case .statistics: openStatisticsDetail()
+        case .perApp: openPerAppDetail()
+        case .settings: openSettings()
+        case .update: checkForUpdates()
+        case .about: openAbout()
+        case .quit: quitApp()
+        }
     }
 
     deinit {
+        if let shortcutMonitor { NSEvent.removeMonitor(shortcutMonitor) }
         let defaults = UserDefaults.standard
         let keys = [
             layoutKey,

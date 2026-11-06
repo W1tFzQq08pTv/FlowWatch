@@ -8,6 +8,7 @@ struct StatusBarComponentEditor: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @GestureState private var drag: DragState?
     @State private var isCancelled = false
+    @State private var contextComponent: StatusBarLayout.Component?
     @State private var hoveredComponent: StatusBarLayout.Component?
 
     private let rowHeight: CGFloat = 44
@@ -38,7 +39,7 @@ struct StatusBarComponentEditor: View {
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                 }
             }
             .accessibilityElement(children: .combine)
@@ -49,9 +50,9 @@ struct StatusBarComponentEditor: View {
                 ZStack(alignment: .topLeading) {
                     if let drag = activeDrag, drag.isInside,
                        let target = previewOrder.firstIndex(of: drag.component) {
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 14)
                             .fill(tint.opacity(0.06))
-                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(tint.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(tint.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                             .frame(height: rowHeight)
                             .offset(y: CGFloat(target) * pitch)
                             .animation(motion, value: target)
@@ -88,17 +89,26 @@ struct StatusBarComponentEditor: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
-            .help(l10n.t("settings.layout.dragHint"))
+            .flowWatchHelp(l10n.t("settings.layout.dragHint"))
             .gesture(dragGesture(component, width: width))
+            .flowWatchHover(.grab)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(l10n.t(component.titleKey))
             .accessibilityAction(named: Text(l10n.t("settings.layout.moveLeft"))) { move(component, by: -1) }
             .accessibilityAction(named: Text(l10n.t("settings.layout.moveRight"))) { move(component, by: 1) }
-            .contextMenu {
-                Button(l10n.t("settings.layout.moveLeft")) { move(component, by: -1) }
-                    .disabled(layout.order.first == component)
-                Button(l10n.t("settings.layout.moveRight")) { move(component, by: 1) }
-                    .disabled(layout.order.last == component)
+            .overlay(FlowWatchSecondaryClick { contextComponent = component })
+            .flowWatchFloating(isPresented: Binding(
+                get: { contextComponent == component },
+                set: { if !$0 { contextComponent = nil } }
+            )) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button(l10n.t("ui.moveUp")) { move(component, by: -1); contextComponent = nil }
+                        .disabled(layout.order.first == component)
+                    Button(l10n.t("ui.moveDown")) { move(component, by: 1); contextComponent = nil }
+                        .disabled(layout.order.last == component)
+                }
+                .buttonStyle(FlowWatchActionButtonStyle())
+                .padding(16)
             }
             ModernSwitch(isOn: Binding(
                 get: { layout.enabled.contains(component) },
@@ -112,11 +122,12 @@ struct StatusBarComponentEditor: View {
             .accessibilityLabel(l10n.t(component.titleKey))
         }
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(isDragged ? Color(nsColor: .controlBackgroundColor) : tint.opacity(hoveredComponent == component ? 0.05 : 0)))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(isDragged ? tint.opacity(0.5) : .clear, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 14).fill(isDragged ? FlowWatchPalette.elevated : tint.opacity(hoveredComponent == component ? 0.05 : 0)))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(isDragged ? tint.opacity(0.5) : .clear, lineWidth: 1))
         .shadow(color: .black.opacity(isDragged ? 0.14 : 0), radius: isDragged ? 7 : 0, y: isDragged ? 3 : 0)
         .opacity(isDragged && activeDrag?.isInside == false ? 0.5 : 1)
         .onHover { hoveredComponent = $0 ? component : nil }
+        .animation(motion, value: hoveredComponent)
     }
 
     private func dragGesture(_ component: StatusBarLayout.Component, width: CGFloat) -> some Gesture {

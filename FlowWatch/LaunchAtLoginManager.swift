@@ -83,22 +83,18 @@ final class LaunchAtLoginManager {
             return
         }
 
-        let alert = NSAlert()
-        alert.messageText = LocalizationManager.shared.t("launch.prompt.title")
-        alert.informativeText = LocalizationManager.shared.t("launch.prompt.message")
-        alert.addButton(withTitle: LocalizationManager.shared.t("launch.prompt.enable"))
-        alert.addButton(withTitle: LocalizationManager.shared.t("launch.prompt.notNow"))
-        
         isPromptVisible = true
         isPromptPending = false
-
-        // 使用 sheet 避免全局 runModal 卡住 accessory app 的窗口关闭事件。
-        NSApp.activate(ignoringOtherApps: true)
         hostWindow.makeKeyAndOrderFront(nil)
-
-        LogManager.shared.log("Present launch at login prompt sheet")
-        alert.beginSheetModal(for: hostWindow) { [weak self] response in
-            self?.handlePromptResponse(response)
+        FlowWatchDialogController.shared.present(
+            title: L10n.t("launch.prompt.title"), message: L10n.t("launch.prompt.message"),
+            confirmTitle: L10n.t("launch.prompt.enable"), cancelTitle: L10n.t("launch.prompt.notNow"),
+            onDismiss: { [weak self] in
+                self?.isPromptVisible = false
+                self?.isPromptPending = true
+            }
+        ) { [weak self] confirmed in
+            self?.handlePromptResponse(confirmed ? .alertFirstButtonReturn : .alertSecondButtonReturn)
         }
     }
 

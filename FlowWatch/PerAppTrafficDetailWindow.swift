@@ -46,11 +46,19 @@ final class PerAppTrafficViewModel: ObservableObject {
     @Published private(set) var isLoadingHistorical = false
 
     private var cancellable: AnyCancellable?
+    private weak var monitor: ProcessNetworkMonitor?
+    private var displaysLiveTraffic = true
     private var historicalLoadGeneration = 0
     private var iconCache: [String: NSImage] = [:]
     private var missingIconIDs: Set<String> = []
 
+    func unbind() {
+        cancellable = nil
+    }
+
     func bind(to monitor: ProcessNetworkMonitor) {
+        self.monitor = monitor
+        guard displaysLiveTraffic, cancellable == nil else { return }
         cancellable = monitor.$scopedTrafficRates
             .receive(on: DispatchQueue.main)
             .sink { [weak self] scopedRates in
@@ -77,6 +85,12 @@ final class PerAppTrafficViewModel: ObservableObject {
     }
 
     func loadHistoricalData(range: PerAppDateRange) {
+        displaysLiveTraffic = range == .today
+        if displaysLiveTraffic {
+            if let monitor { bind(to: monitor) }
+        } else {
+            unbind()
+        }
         historicalLoadGeneration += 1
         let generation = historicalLoadGeneration
 
@@ -240,6 +254,7 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
     static let shared = PerAppTrafficDetailWindowController()
 
     private var detailViewModel: PerAppTrafficViewModel?
+    private weak var monitor: ProcessNetworkMonitor?
 
     private init() {
         super.init(window: nil)
@@ -254,7 +269,7 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
         guard let detailViewModel else { return nil }
         let hostingController = NSHostingController(
             rootView: LocalizedRootView {
-                PerAppTrafficDetailView()
+                FlowWatchWindowRoot(titleKey: "perApp.detail.title") { PerAppTrafficDetailView() }
             }
                 .environmentObject(LocalizationManager.shared)
                 .environmentObject(detailViewModel)
@@ -262,25 +277,25 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
         let window = NSWindow(contentViewController: hostingController)
         window.title = LocalizationManager.shared.t("perApp.detail.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.styleMask.insert(.fullSizeContentView)
-        window.titlebarAppearsTransparent = true
-        window.isOpaque = true
-        window.backgroundColor = .windowBackgroundColor
+        FlowWatchWindowStyle.apply(to: window)
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 980, height: 740))
+        window.setContentSize(NSSize(width: 980, height: 784))
+        window.minSize = NSSize(width: 820, height: 684)
         window.delegate = self
         return window
     }
 
     func bindMonitor(_ monitor: ProcessNetworkMonitor) {
-        if detailViewModel == nil {
-            detailViewModel = PerAppTrafficViewModel()
-        }
-        detailViewModel!.bind(to: monitor)
+        self.monitor = monitor
+        if window?.isVisible == true { detailViewModel?.bind(to: monitor) }
     }
 
     func show() {
         if window == nil {
+            guard let monitor else { return }
+            let viewModel = PerAppTrafficViewModel()
+            viewModel.bind(to: monitor)
+            detailViewModel = viewModel
             guard let window = makeWindow() else {
                 LogManager.shared.log(
                     "Per-app traffic detail window opened before monitor binding",
@@ -299,8 +314,24 @@ final class PerAppTrafficDetailWindowController: NSWindowController, NSWindowDel
 
     func windowWillClose(_ notification: Notification) {
         LogManager.shared.log("Per-app traffic detail window will close")
+        detailViewModel?.unbind()
         window?.contentViewController = nil
         window = nil
+        detailViewModel = nil
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        if window?.occlusionState.contains(.visible) == true, window?.isMiniaturized == false, let monitor {
+            detailViewModel?.bind(to: monitor)
+        } else {
+            detailViewModel?.unbind()
+        }
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) { detailViewModel?.unbind() }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        if let monitor { detailViewModel?.bind(to: monitor) }
     }
 }
 
@@ -442,7 +473,7 @@ struct PerAppTrafficDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+        .background(FlowWatchPalette.canvas)
     }
 
     private var dateRangeControl: some View {
@@ -494,9 +525,9 @@ struct PerAppTrafficDetailView: View {
             Spacer()
 
             if !isToday && viewModel.isLoadingHistorical {
-                ProgressView()
-                    .controlSize(.small)
-                    .help(l10n.t("perApp.chart.loading"))
+                FlowWatchProgressView()
+
+                    .flowWatchHelp(l10n.t("perApp.chart.loading"))
             } else {
                 Text(String(format: l10n.t("perApp.appCount"), items.count))
                     .font(.caption)
@@ -534,7 +565,7 @@ struct PerAppTrafficDetailView: View {
 
     private var loadingState: some View {
         VStack(spacing: 10) {
-            ProgressView()
+            FlowWatchProgressView()
                 .controlSize(.regular)
             Text(l10n.t("perApp.chart.loading"))
                 .font(.body)
@@ -565,7 +596,9 @@ struct PerAppTrafficDetailView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 16)
+            .flowWatchGlassPanel()
+            .padding(16)
         }
     }
 
@@ -625,10 +658,10 @@ struct PerAppTrafficDetailView: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.vertical, 11)
         .background(
             isAlternate ? AnyShapeStyle(Color.primary.opacity(0.025)) : AnyShapeStyle(Color.clear),
-            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
     }
 

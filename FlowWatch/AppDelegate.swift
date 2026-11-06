@@ -16,10 +16,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusBarController = StatusBarController(monitor: monitor, processMonitor: processMonitor)
 
         // 检查开机自启状态
+        #if DEBUG
+        if Bundle.main.object(forInfoDictionaryKey: "FlowWatchVisualQA") as? Bool == true {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let monitor = self.monitor else { return }
+                TrafficStatisticsDetailWindowController.shared.show(monitor: monitor)
+            }
+            return
+        }
+        #endif
         LaunchAtLoginManager.shared.checkAndPrompt()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        #if DEBUG
+        // UI inspection reactivates the app; keep the menu-bar-only QA scene intact.
+        if Bundle.main.object(forInfoDictionaryKey: "FlowWatchVisualQA") as? Bool == true { return true }
+        #endif
         if !flag {
             PerAppTrafficDetailWindowController.shared.show()
         }

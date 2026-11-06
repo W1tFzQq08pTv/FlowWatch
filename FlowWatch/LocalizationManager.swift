@@ -65,8 +65,16 @@ final class LocalizationManager: @preconcurrency ObservableObject {
         return .current
     }
     
+    private var cachedLanguage: AppLanguage?
+    private var cachedBundle = Bundle.main
+
     func t(_ key: String, table: String? = nil) -> String {
-        language.bundle.localizedString(forKey: key, value: key, table: table)
+        let currentLanguage = language
+        if cachedLanguage != currentLanguage {
+            cachedLanguage = currentLanguage
+            cachedBundle = currentLanguage.bundle
+        }
+        return cachedBundle.localizedString(forKey: key, value: key, table: table)
     }
 }
 

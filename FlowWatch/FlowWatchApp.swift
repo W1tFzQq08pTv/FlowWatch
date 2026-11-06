@@ -73,8 +73,20 @@ struct FlowWatchApp: App {
 
     var body: some Scene {
         Settings {
-            LocalizedRootView { SettingsView() }
+            LocalizedRootView { FlowWatchWindowRoot(titleKey: "settings.title") { SettingsView() } }
                 .environmentObject(l10n)
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button(l10n.t("menu.settings")) {
+                    NotificationCenter.default.post(name: .flowWatchOpenSettings, object: nil)
+                }.keyboardShortcut(",")
+            }
+            CommandGroup(replacing: .appTermination) {
+                Button(l10n.t("menu.quit")) {
+                    NotificationCenter.default.post(name: .flowWatchQuitRequested, object: nil)
+                }.keyboardShortcut("q")
+            }
         }
     }
 }

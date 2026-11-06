@@ -16,19 +16,16 @@ final class TrafficStatisticsDetailWindowController: NSWindowController, NSWindo
 
     private func makeWindow(monitor: NetworkUsageMonitor) -> NSWindow {
         let hostingController = NSHostingController(
-            rootView: LocalizedRootView { TrafficStatisticsDetailView(monitor: monitor) }
+            rootView: LocalizedRootView { FlowWatchWindowRoot(titleKey: "statistics.title") { TrafficStatisticsDetailView(monitor: monitor) } }
                 .environmentObject(LocalizationManager.shared)
         )
         let window = NSWindow(contentViewController: hostingController)
         window.title = LocalizationManager.shared.t("statistics.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.styleMask.insert(.fullSizeContentView)
-        window.titlebarAppearsTransparent = true
-        window.isOpaque = true
-        window.backgroundColor = .windowBackgroundColor
+        FlowWatchWindowStyle.apply(to: window)
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 900, height: 660))
-        window.minSize = NSSize(width: 760, height: 560)
+        window.setContentSize(NSSize(width: 940, height: 720))
+        window.minSize = NSSize(width: 760, height: 604)
         window.delegate = self
         return window
     }
@@ -53,6 +50,7 @@ struct TrafficStatisticsDetailView: View {
     @EnvironmentObject private var l10n: LocalizationManager
     @StateObject private var viewModel = TrafficStatisticsDetailViewModel()
     let monitor: NetworkUsageMonitor
+    @Namespace private var sidebarSelectionNamespace
     @State private var selectedSection: StatisticsSection = .home
 
     private var summary: TrafficStatisticsSummary {
@@ -69,10 +67,20 @@ struct TrafficStatisticsDetailView: View {
         }
         .flowWatchWindowSurface()
         .frame(minWidth: 760, minHeight: 560)
+        .onChange(of: selectedSection) { _ in viewModel.reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in viewModel.reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .flowWatchResetToday)) { _ in reloadAfterReset() }
+        .onReceive(NotificationCenter.default.publisher(for: .flowWatchResetAllHistory)) { _ in reloadAfterReset() }
+    }
+
+    private func reloadAfterReset() {
+        // Reset callbacks enqueue the model update on the main queue first.
+        DispatchQueue.main.async { viewModel.reload() }
     }
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 16) {
+            FlowWatchSidebarHeader()
             VStack(spacing: 6) {
                 ForEach(StatisticsSection.allCases) { section in
                     sidebarRow(section)
@@ -84,50 +92,14 @@ struct TrafficStatisticsDetailView: View {
         }
         .padding(16)
         .frame(width: 224)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+        .background(FlowWatchPalette.canvas)
     }
 
     private func sidebarRow(_ section: StatisticsSection) -> some View {
-        let isSelected = selectedSection == section
-
-        return Button {
-            withAnimation(.easeInOut(duration: 0.16)) {
-                selectedSection = section
-            }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: section.systemImage)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(isSelected ? FlowWatchPalette.accent : Color.secondary)
-                    .frame(width: 20)
-
-                Text(l10n.t(section.titleKey))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.primary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                isSelected ? Color.primary.opacity(0.045) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .overlay(alignment: .leading) {
-                if isSelected {
-                    Capsule()
-                        .fill(FlowWatchPalette.accent)
-                        .frame(width: 3, height: 20)
-                        .padding(.leading, 2)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        FlowWatchNavigationRow(
+            title: l10n.t(section.titleKey), icon: section.systemImage,
+            isSelected: selectedSection == section, selectionNamespace: sidebarSelectionNamespace
+        ) { selectedSection = section }
     }
 
     private var detailPane: some View {
@@ -156,17 +128,13 @@ struct TrafficStatisticsDetailView: View {
                 .frame(width: 24)
 
             Text(l10n.t(selectedSection.titleKey))
-                .font(.system(size: 24, weight: .semibold))
+                .font(.system(size: 28, weight: .semibold, design: .rounded))
 
             infoIcon(l10n.t(selectedSection.descriptionKey))
 
             Spacer()
         }
-        .padding(.bottom, 12)
-        .overlay(alignment: .bottom) {
-            Divider()
-                .opacity(0.45)
-        }
+        .padding(.bottom, 8)
     }
 
     @ViewBuilder
@@ -280,10 +248,8 @@ struct TrafficStatisticsDetailView: View {
                 )
             }
         }
-        .padding(.vertical, 12)
-        .overlay(alignment: .bottom) {
-            Divider().opacity(0.38)
-        }
+        .padding(24)
+        .flowWatchGlassPanel()
     }
 
     private func heroBreakdown(
@@ -382,10 +348,7 @@ struct TrafficStatisticsDetailView: View {
     private var funSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                Image(systemName: "person.crop.circle.badge.checkmark")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(FlowWatchPalette.accent)
-                    .frame(width: 30)
+                FlowWatchLineSphere().frame(width: 96, height: 96)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(personaTitle)
@@ -401,10 +364,8 @@ struct TrafficStatisticsDetailView: View {
 
                 Spacer()
             }
-            .padding(.vertical, 12)
-            .overlay(alignment: .bottom) {
-                Divider().opacity(0.38)
-            }
+            .padding(24)
+            .flowWatchGlassPanel()
 
             LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
                 metricCard(
@@ -510,10 +471,8 @@ struct TrafficStatisticsDetailView: View {
 
             content()
         }
-        .padding(.vertical, 10)
-        .overlay(alignment: .bottom) {
-            Divider().opacity(0.38)
-        }
+        .padding(20)
+        .flowWatchGlassPanel()
     }
 
     private func metricCard(
@@ -556,11 +515,9 @@ struct TrafficStatisticsDetailView: View {
                 }
             }
         }
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
-        .overlay(alignment: .bottom) {
-            Divider().opacity(0.30)
-        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
+        .flowWatchGlassPanel()
     }
 
     private func detailRow(

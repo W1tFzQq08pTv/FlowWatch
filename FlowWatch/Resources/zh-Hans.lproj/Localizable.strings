@@ -387,3 +387,23 @@
 "settings.layout.downloadFirst" = "下行优先（上方／左侧）";
 
 "settings.layout.dragHint" = "上下拖动调整顺序；按 Esc 或移出列表后松手取消。";
+
+// Custom interface
+"ui.expanded" = "已展开";
+"ui.collapsed" = "已收起";
+"ui.loading" = "正在加载";
+"ui.live" = "实时速率";
+"ui.today" = "今日流量";
+"ui.week" = "近七日汇总";
+"ui.previousCard" = "上一张卡片";
+"ui.nextCard" = "下一张卡片";
+"ui.cardHint" = "点击卡片或左右拖动切换";
+"ui.workspace" = "网络工作台";
+"ui.quickActions" = "快捷操作";
+"ui.settingsCaption" = "让 FlowWatch 按你的方式运行";
+"ui.aboutCaption" = "让每一字节清晰可见";
+"ui.moveUp" = "上移";
+"ui.moveDown" = "下移";
+"ui.on" = "开启";
+"ui.off" = "关闭";
+"ui.scroll" = "滚动内容";

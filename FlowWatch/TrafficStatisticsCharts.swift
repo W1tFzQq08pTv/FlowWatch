@@ -561,7 +561,7 @@ struct StatisticsChartDashboard: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
         .frame(width: 178, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(FlowWatchPalette.elevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 1)
@@ -906,58 +906,9 @@ private struct StatisticsChartSegmentedPicker<Selection: Hashable>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                let isSelected = selection == item.value
-
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                        selection = item.value
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        if let systemImage = item.systemImage {
-                            Image(systemName: systemImage)
-                                .font(.system(size: 10, weight: .semibold))
-                        }
-                        Text(item.title)
-                            .lineLimit(1)
-                    }
-                    .font(.caption.weight(isSelected ? .semibold : .medium))
-                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .frame(minWidth: 42)
-                    .background(
-                        isSelected
-                            ? StatisticsChartColors.total.opacity(0.14)
-                            : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(
-                                isSelected
-                                    ? StatisticsChartColors.total.opacity(0.22)
-                                    : Color.clear,
-                                lineWidth: 1
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
-                .help(item.title)
-                .accessibilityLabel(item.title)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-        .padding(3)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(accessibilityLabel)
+        FlowWatchSegmentedControl(options: items.map { ($0.title, $0.value) }, selection: $selection)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(accessibilityLabel)
     }
 }
 
@@ -1345,10 +1296,7 @@ private enum StatisticsChartColors {
 
 private struct StatisticsChartCardModifier: ViewModifier {
     func body(content: Content) -> some View {
-        content
-            .overlay(alignment: .bottom) {
-                Divider().opacity(0.38)
-            }
+        content.flowWatchGlassPanel()
     }
 }
 

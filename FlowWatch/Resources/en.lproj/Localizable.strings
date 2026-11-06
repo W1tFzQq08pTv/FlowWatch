@@ -387,3 +387,23 @@
 "settings.layout.downloadFirst" = "Download first (top / left)";
 
 "settings.layout.dragHint" = "Drag vertically to reorder. Press Esc or release outside the list to cancel.";
+
+// Custom interface
+"ui.expanded" = "Expanded";
+"ui.collapsed" = "Collapsed";
+"ui.loading" = "Loading";
+"ui.live" = "Live activity";
+"ui.today" = "Today";
+"ui.week" = "Last seven days";
+"ui.previousCard" = "Previous card";
+"ui.nextCard" = "Next card";
+"ui.cardHint" = "Click or swipe to switch";
+"ui.workspace" = "Network workspace";
+"ui.quickActions" = "Quick actions";
+"ui.settingsCaption" = "Make FlowWatch your own";
+"ui.aboutCaption" = "Every byte, in sight";
+"ui.moveUp" = "Move up";
+"ui.moveDown" = "Move down";
+"ui.on" = "On";
+"ui.off" = "Off";
+"ui.scroll" = "Scroll content";

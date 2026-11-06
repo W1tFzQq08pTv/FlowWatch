@@ -408,8 +408,11 @@ struct MathCurveLoaderRenderer {
         let green = normalizedColor.greenComponent
         let blue = normalizedColor.blueComponent
 
+        let radians = rotation * .pi / 180
+        let cosine = cos(radians), sine = sin(radians)
         func mapPoint(_ point: CGPoint) -> CGPoint {
-            let rotated = Self.rotate(point, degrees: rotation)
+            let dx = Double(point.x) - 50, dy = Double(point.y) - 50
+            let rotated = CGPoint(x: 50 + dx * cosine - dy * sine, y: 50 + dx * sine + dy * cosine)
             return CGPoint(
                 x: origin.x + rotated.x * scale,
                 y: origin.y + (100 - rotated.y) * scale
@@ -482,18 +485,6 @@ struct MathCurveLoaderRenderer {
             dividingBy: preset.rotationDurationMilliseconds
         ) / preset.rotationDurationMilliseconds
         return -progress * 360
-    }
-
-    private static func rotate(_ point: CGPoint, degrees: Double) -> CGPoint {
-        guard degrees != 0 else {
-            return point
-        }
-        let radians = degrees * .pi / 180
-        let dx = Double(point.x) - 50
-        let dy = Double(point.y) - 50
-        let x = 50 + dx * cos(radians) - dy * sin(radians)
-        let y = 50 + dx * sin(radians) + dy * cos(radians)
-        return CGPoint(x: CGFloat(x), y: CGFloat(y))
     }
 
     private static func normalizedRemainder(_ value: Double, dividingBy divisor: Double) -> Double {
