@@ -1,36 +1,50 @@
-# FlowWatch
+# FlowWatch 开发说明
 
-轻量级 macOS 菜单栏网速监控工具。实时展示上下行速率，支持自定义采样间隔和色阶提示。
-
-## 功能特点
-- 菜单栏常驻，显示「上行/下行」速率，可在图标与精简速率两种模式间切换。
-- 速率以 B/KB/MB/GB 每秒显示，按照速率区间动态渐变配色，便于快速分辨流量高低。
-- 主界面可一键暂停/恢复监控，并通过滑杆调整采样间隔（1–10 秒）。
-- 退出入口在菜单栏「完全退出」或主界面按钮。
-
-## 工作原理
-1. **定时采样**：`NetworkUsageMonitor` 使用 `DispatchSourceTimer` 以 `sampleInterval`（默认 1s）周期采样。
-2. **读取网卡字节数**：调用 `getifaddrs` 遍历所有网络接口，过滤掉回环接口，将活跃接口的 `if_data.ifi_ibytes` 与 `if_data.ifi_obytes` 累加得到当前总接收/发送字节数。
-3. **速率计算**：将本次总量与上次采样总量做差，得到区间增量（即瞬时速率，单位 B/s），更新 `downloadBps` / `uploadBps`。
-4. **UI 更新**：`StatusBarController` 和 `MenuStatusLabel` 订阅上述 Published 属性，生成彩色文本/图标；`ContentView` 展示主界面并提供控制项。
-
-## 目录速览
-- `FlowWatchApp.swift`：应用入口，设为 accessory 模式并创建全局监控器与状态栏控制器。
-- `NetworkUsageMonitor.swift`：核心采样与速率计算逻辑，支持暂停与采样间隔更新。
-- `StatusBarController.swift`：托管状态栏菜单项与图标渲染，速率越高颜色越偏红。
-- `MenuStatusLabel.swift`：菜单中的速率小组件，依据存储的显示模式切换样式。
-- `ContentView.swift`：主界面，包含采样间隔调整、监控开关与退出按钮。
+FlowWatch 是 macOS 13+ 的菜单栏网速与流量监控应用，使用 SwiftUI、AppKit 和 Charts。功能、截图和安装方式见[项目 README](../README.md)。
 
 ## 构建与运行
-1. 环境：macOS（Apple Silicon/Intel 均可），建议使用 Xcode 15+。
-2. 打开项目：用 Xcode 打开本目录（或导入上述源文件到同名 SwiftUI macOS App 工程）。
-3. Scheme 选择 `FlowWatch`，目标运行在本机。
-4. 运行后应用常驻菜单栏，点击图标可唤起界面/菜单，调整采样或退出。
+
+CI 使用 Xcode 26.6，建议使用相同或更新版本。打开仓库根目录的 `FlowWatch.xcodeproj`，选择 `FlowWatch` scheme 运行：
+
+```bash
+xcodebuild -project FlowWatch.xcodeproj -scheme FlowWatch \
+  -configuration Debug -destination 'platform=macOS' build
+```
+
+应用默认使用 accessory 模式，不显示 Dock 图标；从菜单栏打开快捷卡片、统计、应用流量和设置。当前未提交自动化测试目标。
+
+## 源码结构
+
+| 文件 | 职责 |
+| --- | --- |
+| `FlowWatchApp.swift` / `AppDelegate.swift` | 应用入口与监控器生命周期 |
+| `NetworkUsageMonitor.swift` | 网卡计数采样、速率与每日总量，支持 1/2/3/5 秒采样间隔 |
+| `ProcessNetworkMonitor.swift` / `NettopTrafficAccounting.swift` | 可选的应用与进程采样、连接增量及接口范围归类 |
+| `DailyTrafficStorage.swift` / `ProcessTrafficStorage.swift` | 每日与应用历史的 JSON 持久化 |
+| `StatusBarController.swift` / `StatusBarLayout.swift` | 菜单栏绘制、组件组合和快捷面板入口 |
+| `FlowWatchQuickPanelView.swift` | 实时、今日与近 7 天三张快捷卡片 |
+| `TrafficStatisticsDetailWindow.swift` / `TrafficStatisticsCharts.swift` | 统计分区、历史趋势与流量构成 |
+| `PerAppTrafficDetailWindow.swift` / `PerAppTrafficSummaryCharts.swift` | 应用用量、筛选、排序和历史图表 |
+| `FlowWatchRingChart.swift` / `FlowWatchChartStyle.swift` | 共享环形几何、图表样式和绘图区边界 |
+| `SettingsView.swift` / `ModernControls.swift` | 设置页与共享卡片控件 |
+| `UpdateManager.swift` / `UpdateDownloadCache.swift` | Sparkle 更新状态与下载缓存 |
+
+界面文案位于 `Resources/zh-Hans.lproj/` 和 `Resources/en.lproj/`。修改文案时同步维护两种语言。实现 `Equatable` 的视图若包含 `@Environment`，显式比较外部输入，避免依赖新版 SDK 的自动合成行为。
+
+## 数据与统计范围
+
+- 网卡总量基于 `getifaddrs` 的字节计数计算，不读取网络包内容。
+- 应用监控使用系统 `nettop` 数据，按接口归类；当前应用列表主要展示外部硬件接口的用量。
+- 网卡与应用统计的采样及归类方式不同，不应假设两者数值完全相等。
+- 偏好设置使用 UserDefaults；历史与日志保存在 `~/Library/Application Support/FlowWatch/`。不要用演示数据覆盖用户历史。
 
 ## 发布与打包
-- 见 `../docs/RELEASING.md`
 
-## 限制与注意
-- 当前速率为所有非回环接口的总和，未按接口或进程拆分。
-- 数据基于系统网卡累计字节，不做历史持久化；切换采样间隔会重启计时器但不清零累积。
-- 速率阈值与配色为内置经验值，如需自定义可在对应 Swift 文件内调整。
+根目录 `.github/workflows/release.yml` 响应 `v*` 标签。工作流从标签注入应用版本号，并使用 Actions 运行号作为构建号，生成 `FlowWatch.dmg`、`FlowWatch.zip` 和签名的 `appcast.xml`。
+
+- `scripts/release_build.sh`：配置证书时的构建打包入口。
+- `scripts/release_build_unsigned.sh`：未配置证书时的构建打包入口。
+- `scripts/notarize.sh`：具备相应凭据时公证并装订产物。
+- Sparkle 私钥用于生成签名的 appcast，是发布所必需的配置；Homebrew tap 凭据可选。
+
+大版本更新使用常规版本标签即可。只有需要禁止跳过的更新才在附注标签说明中单独加入 `sparkle:critical`。
