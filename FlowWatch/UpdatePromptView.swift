@@ -13,7 +13,7 @@ struct UpdatePromptView: View {
             content
         }
         .flowWatchWindowSurface()
-        .frame(minWidth: 560, minHeight: 410)
+        .frame(minWidth: 560, minHeight: 300, alignment: .top)
     }
 
     private var header: some View {
@@ -87,7 +87,7 @@ struct UpdatePromptView: View {
     }
 
     private func updateDetail(_ update: UpdateManager.UpdateInfo) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 24) {
             versionCard(update)
 
             if update.isCritical {
@@ -105,7 +105,6 @@ struct UpdatePromptView: View {
                 downloadProgress(progress)
             }
 
-            Spacer(minLength: 0)
             actions(for: update)
         }
         .padding(.horizontal, 28)
@@ -132,15 +131,12 @@ struct UpdatePromptView: View {
                     .foregroundStyle(.secondary)
                 Text("v\(update.version)")
                     .font(.system(.title3, design: .rounded).weight(.bold))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(FlowWatchPalette.ink)
                     .monospacedDigit()
             }
         }
-        .padding(.vertical, 4)
-        .padding(.bottom, 14)
-        .overlay(alignment: .bottom) {
-            Divider().opacity(0.38)
-        }
+        .padding(24)
+        .flowWatchGlassPanel()
     }
 
     private func downloadProgress(_ progress: Double?) -> some View {
@@ -156,11 +152,11 @@ struct UpdatePromptView: View {
                 }
             }
             if let progress {
-                ProgressView(value: progress)
-                    .progressViewStyle(.linear)
+                FlowWatchProgressView(value: progress)
+
             } else {
-                ProgressView()
-                    .progressViewStyle(.linear)
+                FlowWatchProgressView()
+
             }
         }
     }
@@ -173,11 +169,11 @@ struct UpdatePromptView: View {
                 Button(l10n.t("update.releaseNotes")) {
                     updateManager.openReleaseNotes()
                 }
-                .buttonStyle(UpdateActionButtonStyle(tint: .blue, isPrimary: true))
+                .buttonStyle(FlowWatchActionButtonStyle(tint: .blue, isPrimary: true))
             }
         } else if case .installing = updateManager.status {
             HStack(spacing: 10) {
-                ProgressView().controlSize(.small)
+                FlowWatchProgressView()
                 Text(l10n.t("update.state.preparing.detail"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -192,7 +188,7 @@ struct UpdatePromptView: View {
                 Button(l10n.t("update.installNow")) {
                     updateManager.installNow()
                 }
-                .buttonStyle(UpdateActionButtonStyle(tint: .blue, isPrimary: true))
+                .buttonStyle(FlowWatchActionButtonStyle(tint: .blue, isPrimary: true))
             }
         } else if case .skipped = updateManager.status {
             HStack {
@@ -203,7 +199,7 @@ struct UpdatePromptView: View {
                 Button(l10n.t("update.recheckSkipped")) {
                     updateManager.recheckSkippedVersions()
                 }
-                .buttonStyle(UpdateActionButtonStyle(tint: .blue))
+                .buttonStyle(FlowWatchActionButtonStyle(tint: .blue))
             }
         } else if case .remindLater(_, let until) = updateManager.status {
             HStack {
@@ -214,46 +210,47 @@ struct UpdatePromptView: View {
                 Button(l10n.t("update.installNow")) {
                     updateManager.checkForUpdates(userInitiated: true)
                 }
-                .buttonStyle(UpdateActionButtonStyle(tint: .blue, isPrimary: true))
+                .buttonStyle(FlowWatchActionButtonStyle(tint: .blue, isPrimary: true))
             }
         } else {
-            VStack(spacing: 13) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Button(l10n.t("update.releaseNotes")) {
                         updateManager.openReleaseNotes()
                     }
-                    .buttonStyle(UpdateActionButtonStyle(tint: .blue))
+                    .buttonStyle(FlowWatchActionButtonStyle(tint: .blue))
 
                     Spacer()
 
                     Button(l10n.t("update.installOnQuit")) {
                         updateManager.installOnQuit()
                     }
-                    .buttonStyle(UpdateActionButtonStyle(tint: .blue))
+                    .buttonStyle(FlowWatchActionButtonStyle(tint: .blue))
 
                     Button(primaryActionTitle) {
                         updateManager.installNow()
                     }
-                    .buttonStyle(UpdateActionButtonStyle(tint: .blue, isPrimary: true))
+                    .buttonStyle(FlowWatchActionButtonStyle(tint: .blue, isPrimary: true))
                 }
 
-                HStack(spacing: 16) {
-                    Button(l10n.t("update.remindTomorrow")) {
+                HStack(spacing: 8) {
+                    Button {
                         updateManager.remindLater()
+                    } label: {
+                        Label(l10n.t("update.remindTomorrow"), systemImage: "clock")
                     }
-                    .buttonStyle(.link)
+                    .buttonStyle(FlowWatchActionButtonStyle())
 
                     if !update.isCritical {
-                        Button(l10n.t("update.skipVersion")) {
+                        Button {
                             updateManager.skipVersion()
+                        } label: {
+                            Label(l10n.t("update.skipVersion"), systemImage: "forward.end")
                         }
-                        .buttonStyle(.link)
+                        .buttonStyle(FlowWatchActionButtonStyle())
                     }
 
                     Spacer()
-                    Text(l10n.t("update.installConsentHint"))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
                 }
             }
         }
@@ -280,10 +277,10 @@ struct UpdatePromptView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            if showsProgress { ProgressView().controlSize(.small) }
+            if showsProgress { FlowWatchProgressView() }
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(UpdateActionButtonStyle(tint: .blue, isPrimary: !showsProgress))
+                    .buttonStyle(FlowWatchActionButtonStyle(tint: .blue, isPrimary: !showsProgress))
                     .padding(.top, 4)
             }
             Spacer()
@@ -308,12 +305,12 @@ struct UpdatePromptView: View {
                 Button(l10n.t("update.close")) {
                     updateManager.closeUpdateWindow()
                 }
-                .buttonStyle(UpdateActionButtonStyle(tint: .blue))
+                .buttonStyle(FlowWatchActionButtonStyle(tint: .blue))
 
                 Button(l10n.t("update.retry")) {
                     updateManager.retryUpdateCheck()
                 }
-                .buttonStyle(UpdateActionButtonStyle(tint: .blue, isPrimary: true))
+                .buttonStyle(FlowWatchActionButtonStyle(tint: .blue, isPrimary: true))
             }
             Spacer()
         }
@@ -387,29 +384,5 @@ struct UpdatePromptView: View {
         formatter.dateStyle = .none
         formatter.timeStyle = .short
         return formatter.string(from: date)
-    }
-}
-
-private struct UpdateActionButtonStyle: ButtonStyle {
-    let tint: Color
-    var isPrimary = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.callout.weight(.semibold))
-            .foregroundStyle(isPrimary ? Color.white : Color.primary)
-            .padding(.horizontal, 15)
-            .padding(.vertical, 9)
-            .background(
-                isPrimary
-                    ? tint.opacity(configuration.isPressed ? 0.78 : 0.94)
-                    : Color.primary.opacity(configuration.isPressed ? 0.08 : 0.035),
-                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(isPrimary ? tint.opacity(0.18) : Color.primary.opacity(0.08), lineWidth: 1)
-            )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }
 }

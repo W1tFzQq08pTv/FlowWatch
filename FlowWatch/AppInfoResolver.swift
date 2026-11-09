@@ -54,10 +54,15 @@ final class AppInfoResolver {
         lock.unlock()
     }
 
-    func removePID(_ pid: pid_t) {
+    func retainPIDs(_ activePIDs: Set<pid_t>) {
         lock.lock()
-        cache.removeValue(forKey: pid)
-        lock.unlock()
+        defer { lock.unlock() }
+        cache = cache.filter { activePIDs.contains($0.key) }
+        // Retain reuse across short-lived helpers without accumulating every executable forever.
+        if pathCache.count > 256 {
+            let activePaths = Set(cache.values.map(\.executablePath))
+            pathCache = pathCache.filter { activePaths.contains($0.key) }
+        }
     }
 
     private func executablePath(for pid: pid_t) -> String? {

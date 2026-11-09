@@ -15,18 +15,15 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
 
     private func makeWindow() -> NSWindow {
         let hostingController = NSHostingController(
-            rootView: LocalizedRootView { AboutView() }
+            rootView: LocalizedRootView { FlowWatchWindowRoot(titleKey: "menu.about") { AboutView() } }
                 .environmentObject(LocalizationManager.shared)
         )
         let window = NSWindow(contentViewController: hostingController)
         window.title = LocalizationManager.shared.t("menu.about")
         window.styleMask = [.titled, .closable, .miniaturizable]
-        window.styleMask.insert(.fullSizeContentView)
-        window.titlebarAppearsTransparent = true
-        window.isOpaque = true
-        window.backgroundColor = .windowBackgroundColor
+        FlowWatchWindowStyle.apply(to: window)
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 360, height: 280))
+        window.setContentSize(NSSize(width: 440, height: 440))
         window.delegate = self
         return window
     }

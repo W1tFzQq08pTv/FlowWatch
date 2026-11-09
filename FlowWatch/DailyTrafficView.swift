@@ -15,6 +15,7 @@ import SwiftUI
 struct DailyTrafficView: View {
     @ObservedObject private var monitor: NetworkUsageMonitor
     @StateObject private var viewModel = DailyTrafficViewModel()
+    @Environment(\.flowWatchWindowVisible) private var isWindowVisible
     @EnvironmentObject private var l10n: LocalizationManager
 
     init(monitor: NetworkUsageMonitor) {
@@ -41,10 +42,13 @@ struct DailyTrafficView: View {
         .padding(.top, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
-            viewModel.startUpdating()
+            if isWindowVisible { viewModel.startUpdating() }
         }
         .onDisappear {
             viewModel.stopUpdating()
+        }
+        .onChange(of: isWindowVisible) { visible in
+            if visible { viewModel.startUpdating() } else { viewModel.stopUpdating() }
         }
     }
 
@@ -74,10 +78,12 @@ private struct DailyTrafficMetricSummaryView: View {
     @AppStorage("maxColorRateMbps") private var maxColorRateMbps: Double = 100
     @AppStorage("colorRatePercent") private var colorRatePercent: Double = 100
     @AppStorage("statusBarSmoothTransition") private var smoothTransitionEnabled: Bool = true
+    @Environment(\.flowWatchWindowVisible) private var isWindowVisible
     @EnvironmentObject private var l10n: LocalizationManager
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(alignment: .top, spacing: 32) {
+        HStack(alignment: .top, spacing: 16) {
             speedMetric(
                 title: l10n.t("daily.download"),
                 todayTitle: l10n.t("daily.todayDownload"),
@@ -105,10 +111,13 @@ private struct DailyTrafficMetricSummaryView: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 4)
         .onAppear {
-            liveDisplay.bind(to: monitor)
+            if isWindowVisible { liveDisplay.bind(to: monitor) }
         }
         .onDisappear {
             liveDisplay.unbind()
+        }
+        .onChange(of: isWindowVisible) { visible in
+            if visible { liveDisplay.bind(to: monitor) } else { liveDisplay.unbind() }
         }
     }
 
@@ -162,7 +171,7 @@ private struct DailyTrafficMetricSummaryView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 4)
-                Text(ByteAxisFormatter.formatBytes(todayBytes))
+                Text(FlowWatchByteFormatter.formatBytes(todayBytes))
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -170,7 +179,9 @@ private struct DailyTrafficMetricSummaryView: View {
                     .minimumScaleFactor(0.82)
             }
         }
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .flowWatchGlassPanel()
     }
 
     private func formattedSpeedParts(_ bytesPerSecond: Double) -> (value: String, unit: String) {
@@ -207,7 +218,7 @@ private struct DailyTrafficMetricSummaryView: View {
 
     private func speedValueColor(for bytesPerSecond: Double) -> Color {
         let ratio = speedColorRatio(for: bytesPerSecond)
-        let startColor = NSColor.labelColor.usingColorSpace(.sRGB) ?? .labelColor
+        let startColor = colorScheme == .dark ? NSColor(srgbRed: 0.957, green: 0.957, blue: 0.949, alpha: 1) : NSColor(srgbRed: 0.098, green: 0.102, blue: 0.11, alpha: 1)
         let yellow = NSColor.systemYellow.usingColorSpace(.sRGB) ?? .systemYellow
         let red = NSColor.systemRed.usingColorSpace(.sRGB) ?? .systemRed
 
@@ -252,12 +263,22 @@ private enum RecentTrafficDirection: Equatable {
 }
 
 private struct RecentTrafficSparkline: View, Equatable {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let samples: [TrafficRateSample]
     let direction: RecentTrafficDirection
     let color: Color
     let accessibilityTitle: String
     let accessibilityTrendLabel: String
     let smoothTransitionEnabled: Bool
+
+    static func == (lhs: RecentTrafficSparkline, rhs: RecentTrafficSparkline) -> Bool {
+        lhs.samples == rhs.samples
+            && lhs.direction == rhs.direction
+            && lhs.color == rhs.color
+            && lhs.accessibilityTitle == rhs.accessibilityTitle
+            && lhs.accessibilityTrendLabel == rhs.accessibilityTrendLabel
+            && lhs.smoothTransitionEnabled == rhs.smoothTransitionEnabled
+    }
 
     private var maximumValue: Double {
         max(samples.map(direction.value(from:)).max() ?? 0, 1)
@@ -297,8 +318,9 @@ private struct RecentTrafficSparkline: View, Equatable {
                 .chartXAxis(.hidden)
                 .chartYAxis(.hidden)
                 .chartYScale(domain: 0...(maximumValue * 1.08))
+                .flowWatchChartPlot()
                 .animation(
-                    smoothTransitionEnabled ? .easeOut(duration: 0.3) : nil,
+                    smoothTransitionEnabled && !reduceMotion ? .easeOut(duration: 0.3) : nil,
                     value: samples
                 )
             } else {
@@ -309,11 +331,13 @@ private struct RecentTrafficSparkline: View, Equatable {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(accessibilityTitle), \(accessibilityTrendLabel)")
-        .accessibilityValue("\(ByteAxisFormatter.formatBytes(latestValue))/s")
+        .accessibilityValue("\(FlowWatchByteFormatter.formatBytes(latestValue))/s")
     }
 }
 
 private struct DailyTrafficChartSection: View, Equatable {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     let records: [DailyTrafficItem]
     let title: String
     let dateLabel: String
@@ -354,7 +378,7 @@ private struct DailyTrafficChartSection: View, Equatable {
                         .transition(.opacity)
                 }
             }
-            .animation(.easeOut(duration: 0.12), value: selectedChartRecord?.dayLabel)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selectedChartRecord?.dayLabel)
 
             if #available(macOS 13.0, *) {
                 chartView
@@ -365,25 +389,31 @@ private struct DailyTrafficChartSection: View, Equatable {
                     .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
             }
         }
-        .padding(.horizontal, 4)
-        .padding(.top, 2)
+        .padding(20)
+        .flowWatchGlassPanel()
     }
 
     private var chartLegend: some View {
         HStack(spacing: 10) {
-            legendItem(title: downloadLabel, color: FlowWatchPalette.download)
-            legendItem(title: uploadLabel, color: FlowWatchPalette.upload)
+            legendItem(title: downloadLabel, color: FlowWatchPalette.download, systemImage: "arrow.down")
+            legendItem(title: uploadLabel, color: FlowWatchPalette.upload, systemImage: "arrow.up")
             averageLegendItem
         }
         .font(.caption)
         .foregroundStyle(.secondary)
     }
 
-    private func legendItem(title: String, color: Color) -> some View {
+    private func legendItem(title: String, color: Color, systemImage: String) -> some View {
         HStack(spacing: 5) {
-            Capsule()
-                .fill(color)
-                .frame(width: 13, height: 3)
+            if differentiateWithoutColor {
+                Image(systemName: systemImage)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(color)
+            } else {
+                Capsule()
+                    .fill(color)
+                    .frame(width: 13, height: 3)
+            }
             Text(title)
         }
     }
@@ -415,13 +445,13 @@ private struct DailyTrafficChartSection: View, Equatable {
 
             selectedRecordMetric(
                 systemImage: "arrow.down",
-                value: ByteAxisFormatter.formatMB(record.downloadMB),
+                value: FlowWatchByteFormatter.formatMB(record.downloadMB),
                 color: FlowWatchPalette.download,
                 accessibilityTitle: downloadLabel
             )
             selectedRecordMetric(
                 systemImage: "arrow.up",
-                value: ByteAxisFormatter.formatMB(record.uploadMB),
+                value: FlowWatchByteFormatter.formatMB(record.uploadMB),
                 color: FlowWatchPalette.upload,
                 accessibilityTitle: uploadLabel
             )
@@ -482,28 +512,16 @@ private struct DailyTrafficChartSection: View, Equatable {
         let todayLabel = todayChartDayLabel
         let downloadAverage = downloadAverageMB
         let uploadAverage = uploadAverageMB
-        let gridRecords = records
 
         return Chart {
-            ForEach(gridRecords) { record in
-                RuleMark(
-                    x: .value(dateLabel, record.dayLabel)
-                )
-                .foregroundStyle(Color.secondary.opacity(0.16))
-                .lineStyle(StrokeStyle(lineWidth: 0.6, dash: [3, 3]))
-            }
-
             if downloadAverage > 0 {
                 RuleMark(
                     y: .value(downloadAverageLabel, downloadAverage)
                 )
                 .foregroundStyle(FlowWatchPalette.download.opacity(0.56))
                 .lineStyle(StrokeStyle(lineWidth: 1.15, lineCap: .round, dash: [5, 4]))
-                .annotation(position: .trailing, alignment: .leading) {
-                    averageValueLabel(value: downloadAverage, color: FlowWatchPalette.download)
-                }
                 .accessibilityLabel(downloadAverageLabel)
-                .accessibilityValue(ByteAxisFormatter.formatMB(downloadAverage))
+                .accessibilityValue(FlowWatchByteFormatter.formatMB(downloadAverage))
             }
 
             if uploadAverage > 0 {
@@ -512,11 +530,8 @@ private struct DailyTrafficChartSection: View, Equatable {
                 )
                 .foregroundStyle(FlowWatchPalette.upload.opacity(0.56))
                 .lineStyle(StrokeStyle(lineWidth: 1.15, lineCap: .round, dash: [5, 4]))
-                .annotation(position: .trailing, alignment: .leading) {
-                    averageValueLabel(value: uploadAverage, color: FlowWatchPalette.upload)
-                }
                 .accessibilityLabel(uploadAverageLabel)
-                .accessibilityValue(ByteAxisFormatter.formatMB(uploadAverage))
+                .accessibilityValue(FlowWatchByteFormatter.formatMB(uploadAverage))
             }
 
             ForEach(records) { record in
@@ -526,7 +541,7 @@ private struct DailyTrafficChartSection: View, Equatable {
                     series: .value(typeLabel, downloadLabel)
                 )
                 .foregroundStyle(FlowWatchPalette.download)
-                .lineStyle(StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                .lineStyle(StrokeStyle(lineWidth: FlowWatchChartStyle.lineWidth, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.monotone)
             }
 
@@ -537,7 +552,14 @@ private struct DailyTrafficChartSection: View, Equatable {
                     series: .value(typeLabel, uploadLabel)
                 )
                 .foregroundStyle(FlowWatchPalette.upload)
-                .lineStyle(StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                .lineStyle(
+                    StrokeStyle(
+                        lineWidth: FlowWatchChartStyle.lineWidth,
+                        lineCap: .round,
+                        lineJoin: .round,
+                        dash: differentiateWithoutColor ? [2, 3] : []
+                    )
+                )
                 .interpolationMethod(.monotone)
             }
 
@@ -555,9 +577,20 @@ private struct DailyTrafficChartSection: View, Equatable {
             domain: axisScale.domain,
             range: .plotDimension(startPadding: 0, endPadding: 0)
         )
+        .flowWatchChartPlot()
         .chartOverlay { proxy in
             GeometryReader { geo in
                 let plotFrame = geo[proxy.plotAreaFrame]
+                let downloadY = proxy.position(forY: downloadAverage) ?? plotFrame.height
+                let uploadY = proxy.position(forY: uploadAverage) ?? plotFrame.height
+                let labelsAreClose = downloadAverage > 0 && uploadAverage > 0 && abs(downloadY - uploadY) < 14
+                let labelCenter = min(max((downloadY + uploadY) / 2, 14), plotFrame.height - 14)
+                let downloadLabelY = labelsAreClose
+                    ? labelCenter + (downloadY <= uploadY ? -7 : 7)
+                    : min(max(downloadY, 7), plotFrame.height - 7)
+                let uploadLabelY = labelsAreClose
+                    ? labelCenter + (downloadY <= uploadY ? 7 : -7)
+                    : min(max(uploadY, 7), plotFrame.height - 7)
 
                 MouseLocationTrackingView { location in
                     updateSelectedRecord(location: location, plotFrame: plotFrame, proxy: proxy)
@@ -567,9 +600,21 @@ private struct DailyTrafficChartSection: View, Equatable {
                 .accessibilityLabel(title)
                 .accessibilityValue(
                     selectedChartRecord.map {
-                        "\($0.dayLabel), \(downloadLabel) \(ByteAxisFormatter.formatMB($0.downloadMB)), \(uploadLabel) \(ByteAxisFormatter.formatMB($0.uploadMB))"
+                        "\($0.dayLabel), \(downloadLabel) \(FlowWatchByteFormatter.formatMB($0.downloadMB)), \(uploadLabel) \(FlowWatchByteFormatter.formatMB($0.uploadMB))"
                     } ?? ""
                 )
+
+                // Keep average labels outside the clipped marks layer.
+                if downloadAverage > 0 {
+                    averageValueLabel(value: downloadAverage, color: FlowWatchPalette.download)
+                        .position(x: plotFrame.maxX + 24, y: plotFrame.minY + downloadLabelY)
+                        .allowsHitTesting(false)
+                }
+                if uploadAverage > 0 {
+                    averageValueLabel(value: uploadAverage, color: FlowWatchPalette.upload)
+                        .position(x: plotFrame.maxX + 24, y: plotFrame.minY + uploadLabelY)
+                        .allowsHitTesting(false)
+                }
             }
         }
         .chartXAxis {
@@ -585,23 +630,23 @@ private struct DailyTrafficChartSection: View, Equatable {
             AxisMarks(position: .leading, values: axisScale.gridValues) { value in
                 let rawValue = value.as(Double.self) ?? 0
                 AxisGridLine(
-                    stroke: StrokeStyle(lineWidth: 0.6, dash: [3, 3])
+                    stroke: FlowWatchChartStyle.gridStroke(isBaseline: rawValue == 0)
                 )
-                .foregroundStyle(Color.secondary.opacity(rawValue == 0 ? 0.24 : 0.2))
+                .foregroundStyle(FlowWatchChartStyle.gridColor(isBaseline: rawValue == 0))
 
                 if rawValue != 0 {
                     AxisValueLabel(axisScale.format(rawValue))
-                        .font(.system(size: 9))
+                        .font(FlowWatchChartStyle.axisFont)
                         .foregroundStyle(Color.secondary.opacity(0.82))
                 }
             }
         }
         .frame(minHeight: 200)
-        .padding(.trailing, 24)
+        .padding(.trailing, 48)
     }
 
     private func averageValueLabel(value: Double, color: Color) -> some View {
-        Text(ByteAxisFormatter.formatCompactMB(value))
+        Text(FlowWatchByteFormatter.formatCompactMB(value))
             .font(.system(size: 9, weight: .medium, design: .monospaced))
             .monospacedDigit()
             .foregroundStyle(color)
@@ -735,58 +780,6 @@ private struct TrafficChartYAxisScale {
     }
 }
 
-private enum ByteAxisFormatter {
-    static func formatBytes(_ bytes: Double) -> String {
-        let units = ["B", "K", "M", "G", "T"]
-        var value = max(bytes, 0)
-        var unitIndex = 0
-
-        while value >= 1024 && unitIndex < units.count - 1 {
-            value /= 1024
-            unitIndex += 1
-        }
-
-        let stringValue: String
-        if value >= 100 {
-            stringValue = String(format: "%.0f", value.rounded())
-        } else if value >= 10 {
-            stringValue = String(format: "%.1f", value)
-        } else if unitIndex == 0 {
-            stringValue = String(format: "%.0f", value)
-        } else {
-            stringValue = String(format: "%.1f", value)
-        }
-
-        return "\(stringValue) \(units[unitIndex])"
-    }
-
-    static func formatMB(_ value: Double) -> String {
-        formatBytes(value * 1024 * 1024)
-    }
-
-    static func formatCompactMB(_ value: Double) -> String {
-        let units = ["B", "K", "M", "G", "T"]
-        var scaledValue = max(value, 0) * 1024 * 1024
-        var unitIndex = 0
-
-        while scaledValue >= 1024 && unitIndex < units.count - 1 {
-            scaledValue /= 1024
-            unitIndex += 1
-        }
-
-        let stringValue: String
-        if unitIndex >= 3 {
-            let oneDecimalValue = String(format: "%.1f", scaledValue)
-            stringValue = oneDecimalValue.hasSuffix(".0")
-                ? String(oneDecimalValue.dropLast(2))
-                : oneDecimalValue
-        } else {
-            stringValue = String(format: "%.0f", scaledValue.rounded())
-        }
-
-        return "\(stringValue)\(units[unitIndex])"
-    }
-}
 
 struct DailyTrafficItem: Identifiable, Equatable {
     let date: Date
@@ -843,7 +836,10 @@ private final class DailyTrafficLiveDisplay: ObservableObject {
             monitor.$todayDownloaded,
             monitor.$todayUploaded
         )
-        .throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
+        .debounce(for: .milliseconds(10), scheduler: DispatchQueue.main)
+        .removeDuplicates { previous, next in
+            previous.0 == next.0 && previous.1 == next.1 && previous.2 == next.2 && previous.3 == next.3
+        }
         .sink { [weak self] downloadBps, uploadBps, todayDownloaded, todayUploaded in
             self?.moveTo(
                 downloadBps: downloadBps,
@@ -943,7 +939,7 @@ private final class DailyTrafficLiveDisplay: ObservableObject {
 
     private func animationTick() {
         let elapsed = CACurrentMediaTime() - animationStartTime
-        let progress = min(elapsed / sampleInterval, 1.0)
+        let progress = min(elapsed / min(sampleInterval, 0.5), 1.0)
         let eased = easeOutCubic(progress)
 
         downloadBps = startDownloadBps + (targetDownloadBps - startDownloadBps) * eased
@@ -978,7 +974,7 @@ private final class DailyTrafficLiveDisplay: ObservableObject {
 final class DailyTrafficViewModel: ObservableObject {
     @Published var records: [DailyTrafficItem] = []
 
-    private var updateTimer: Timer?
+    private var updateSubscriptions = Set<AnyCancellable>()
     private let storage: DailyTrafficStorage
 
     private static let dayLabelFormatter: DateFormatter = {
@@ -996,21 +992,22 @@ final class DailyTrafficViewModel: ObservableObject {
         loadData()
     }
 
-    deinit {
-        updateTimer?.invalidate()
-    }
-
     func startUpdating() {
+        guard updateSubscriptions.isEmpty else { return }
         loadData()
-        guard updateTimer == nil else { return }
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.loadData()
-        }
+        let center = NotificationCenter.default
+        Publishers.Merge3(
+            center.publisher(for: .NSCalendarDayChanged),
+            center.publisher(for: .flowWatchResetToday),
+            center.publisher(for: .flowWatchResetAllHistory)
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _ in self?.loadData() }
+        .store(in: &updateSubscriptions)
     }
 
     func stopUpdating() {
-        updateTimer?.invalidate()
-        updateTimer = nil
+        updateSubscriptions.removeAll()
     }
 
     private func loadData() {

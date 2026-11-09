@@ -332,15 +332,13 @@ struct StatisticsChartDashboard: View {
         .chartLegend(.hidden)
         .chartXScale(range: .plotDimension(startPadding: 10, endPadding: 10))
         .chartYScale(domain: axisScale.domain)
+        .flowWatchChartPlot()
         .chartXAxis {
             AxisMarks(values: xAxisDates(from: days)) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 4]))
-                    .foregroundStyle(Color.secondary.opacity(colorScheme == .dark ? 0.16 : 0.10))
-
                 if let date = value.as(Date.self) {
                     AxisValueLabel {
                         Text(axisDateFormatter.string(from: date))
-                            .font(.system(size: 9, weight: .medium))
+                            .font(FlowWatchChartStyle.axisFont)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -350,18 +348,12 @@ struct StatisticsChartDashboard: View {
             AxisMarks(position: .leading, values: axisScale.tickValues) { value in
                 let bytes = value.as(Double.self) ?? 0
 
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 4]))
-                    .foregroundStyle(
-                        Color.secondary.opacity(
-                            bytes == 0
-                                ? (colorScheme == .dark ? 0.24 : 0.16)
-                                : (colorScheme == .dark ? 0.16 : 0.10)
-                        )
-                    )
+                AxisGridLine(stroke: FlowWatchChartStyle.gridStroke(isBaseline: bytes == 0))
+                    .foregroundStyle(FlowWatchChartStyle.gridColor(isBaseline: bytes == 0))
 
                 if bytes > 0 {
                     AxisValueLabel(axisScale.label(for: bytes))
-                        .font(.system(size: 9, weight: .medium))
+                        .font(FlowWatchChartStyle.axisFont)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -426,7 +418,7 @@ struct StatisticsChartDashboard: View {
             .foregroundStyle(StatisticsChartColors.download)
             .lineStyle(
                 StrokeStyle(
-                    lineWidth: 1.7,
+                    lineWidth: FlowWatchChartStyle.lineWidth,
                     lineCap: .round,
                     lineJoin: .round
                 )
@@ -443,7 +435,7 @@ struct StatisticsChartDashboard: View {
             .foregroundStyle(StatisticsChartColors.upload)
             .lineStyle(
                 StrokeStyle(
-                    lineWidth: 1.7,
+                    lineWidth: FlowWatchChartStyle.lineWidth,
                     lineCap: .round,
                     lineJoin: .round,
                     dash: differentiateWithoutColor ? [2, 3] : []
@@ -472,6 +464,7 @@ struct StatisticsChartDashboard: View {
                 width: .fixed(selectedRange.barWidth)
             )
             .foregroundStyle(downloadGradient)
+            .cornerRadius(2)
             .opacity(selectedDay == nil || selectedDay?.id == day.id ? 1 : 0.46)
 
             BarMark(
@@ -481,6 +474,7 @@ struct StatisticsChartDashboard: View {
                 width: .fixed(selectedRange.barWidth)
             )
             .foregroundStyle(uploadGradient)
+            .cornerRadius(2)
             .opacity(selectedDay == nil || selectedDay?.id == day.id ? 1 : 0.46)
         }
     }
@@ -561,7 +555,7 @@ struct StatisticsChartDashboard: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
         .frame(width: 178, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(FlowWatchPalette.elevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 1)
@@ -611,8 +605,11 @@ struct StatisticsChartDashboard: View {
             )
 
             HStack(spacing: 18) {
-                StatisticsCompositionRing(
-                    downloadShare: downloadShare,
+                FlowWatchRingChart(
+                    segments: [
+                        .init(value: downloadBytes, color: StatisticsChartColors.download),
+                        .init(value: uploadBytes, color: StatisticsChartColors.upload)
+                    ],
                     centerTitle: l10n.t("statistics.chart.total"),
                     centerValue: StatisticsChartFormatter.bytes(totalBytes)
                 )
@@ -666,6 +663,8 @@ struct StatisticsChartDashboard: View {
                         .foregroundStyle(color)
 
                     if differentiateWithoutColor {
+                        Text(isDashed ? "2" : "1")
+                            .font(.system(size: 9, weight: .semibold))
                         Canvas { context, size in
                             var path = Path()
                             path.move(to: CGPoint(x: 0, y: size.height / 2))
@@ -732,27 +731,29 @@ struct StatisticsChartDashboard: View {
                         endPoint: .bottom
                     )
                 )
+                .cornerRadius(3)
                 .accessibilityLabel(item.label)
                 .accessibilityValue(StatisticsChartFormatter.bytes(item.averageBytes))
             }
             .chartLegend(.hidden)
             .chartYScale(domain: axisScale.domain)
+            .flowWatchChartPlot()
             .chartXAxis {
                 AxisMarks { _ in
                     AxisValueLabel()
-                        .font(.system(size: 9, weight: .medium))
+                        .font(FlowWatchChartStyle.axisFont)
                         .foregroundStyle(.secondary)
                 }
             }
             .chartYAxis {
                 AxisMarks(position: .leading, values: axisScale.tickValues) { value in
                     let bytes = value.as(Double.self) ?? 0
-                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 4]))
-                        .foregroundStyle(Color.secondary.opacity(colorScheme == .dark ? 0.16 : 0.10))
+                    AxisGridLine(stroke: FlowWatchChartStyle.gridStroke(isBaseline: bytes == 0))
+                        .foregroundStyle(FlowWatchChartStyle.gridColor(isBaseline: bytes == 0))
 
                     if bytes > 0 {
                         AxisValueLabel(axisScale.label(for: bytes))
-                            .font(.system(size: 9, weight: .medium))
+                            .font(FlowWatchChartStyle.axisFont)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -906,134 +907,9 @@ private struct StatisticsChartSegmentedPicker<Selection: Hashable>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                let isSelected = selection == item.value
-
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                        selection = item.value
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        if let systemImage = item.systemImage {
-                            Image(systemName: systemImage)
-                                .font(.system(size: 10, weight: .semibold))
-                        }
-                        Text(item.title)
-                            .lineLimit(1)
-                    }
-                    .font(.caption.weight(isSelected ? .semibold : .medium))
-                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .frame(minWidth: 42)
-                    .background(
-                        isSelected
-                            ? StatisticsChartColors.total.opacity(0.14)
-                            : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(
-                                isSelected
-                                    ? StatisticsChartColors.total.opacity(0.22)
-                                    : Color.clear,
-                                lineWidth: 1
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
-                .help(item.title)
-                .accessibilityLabel(item.title)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-        .padding(3)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
-
-private struct StatisticsCompositionRing: View {
-    let downloadShare: Double
-    let centerTitle: String
-    let centerValue: String
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
-
-    private var clampedDownloadShare: CGFloat {
-        CGFloat(max(0, min(downloadShare, 1)))
-    }
-
-    private var hasBothDirections: Bool {
-        clampedDownloadShare > 0 && clampedDownloadShare < 1
-    }
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.secondary.opacity(0.10), lineWidth: 14)
-
-            Circle()
-                .trim(from: 0, to: max(0, clampedDownloadShare - (hasBothDirections ? 0.008 : 0)))
-                .stroke(
-                    AngularGradient(
-                        colors: differentiateWithoutColor
-                            ? [Color.primary.opacity(0.68), Color.primary.opacity(0.92)]
-                            : [
-                                StatisticsChartColors.download.opacity(0.72),
-                                StatisticsChartColors.download
-                            ],
-                        center: .center
-                    ),
-                    style: StrokeStyle(lineWidth: 14, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-
-            Circle()
-                .trim(from: min(1, clampedDownloadShare + (hasBothDirections ? 0.008 : 0)), to: 1)
-                .stroke(
-                    AngularGradient(
-                        colors: differentiateWithoutColor
-                            ? [Color.primary.opacity(0.24), Color.primary.opacity(0.46)]
-                            : [
-                                StatisticsChartColors.upload.opacity(0.68),
-                                StatisticsChartColors.upload
-                            ],
-                        center: .center
-                    ),
-                    style: StrokeStyle(
-                        lineWidth: 14,
-                        lineCap: .round,
-                        dash: differentiateWithoutColor ? [2, 3] : []
-                    )
-                )
-                .rotationEffect(.degrees(-90))
-
-            VStack(spacing: 3) {
-                Text(centerTitle)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Text(centerValue)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.66)
-            }
-            .padding(22)
-        }
-        .padding(7)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: clampedDownloadShare)
-        .accessibilityHidden(true)
+        FlowWatchSegmentedControl(options: items.map { ($0.title, $0.value) }, selection: $selection)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(accessibilityLabel)
     }
 }
 
@@ -1345,10 +1221,7 @@ private enum StatisticsChartColors {
 
 private struct StatisticsChartCardModifier: ViewModifier {
     func body(content: Content) -> some View {
-        content
-            .overlay(alignment: .bottom) {
-                Divider().opacity(0.38)
-            }
+        content.flowWatchGlassPanel()
     }
 }
 

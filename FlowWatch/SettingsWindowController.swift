@@ -15,19 +15,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func makeWindow() -> NSWindow {
         let hostingController = NSHostingController(
-            rootView: LocalizedRootView { SettingsView() }
+            rootView: LocalizedRootView { FlowWatchWindowRoot(titleKey: "settings.title") { SettingsView() } }
                 .environmentObject(LocalizationManager.shared)
         )
         let window = NSWindow(contentViewController: hostingController)
         window.title = LocalizationManager.shared.t("settings.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.styleMask.insert(.fullSizeContentView)
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .visible
-        window.isOpaque = true
-        window.backgroundColor = .windowBackgroundColor
+        FlowWatchWindowStyle.apply(to: window)
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 900, height: 600))
+        window.setContentSize(NSSize(width: 940, height: 704))
+        window.minSize = NSSize(width: 860, height: 624)
         window.delegate = self
         return window
     }

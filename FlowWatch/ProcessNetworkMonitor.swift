@@ -171,6 +171,7 @@ final class ProcessNetworkMonitor: ObservableObject {
         stopSampleTimer()
         stopActiveSample()
         accounting = NettopTrafficAccounting()
+        resolver.clearCache()
         lastSuccessfulSampleAt = nil
         if clearPublishedRates {
             DispatchQueue.main.async { [weak self] in
@@ -390,10 +391,18 @@ final class ProcessNetworkMonitor: ObservableObject {
 
         let rateInterval = max(sampledAt.timeIntervalSince(lastSuccessfulSampleAt ?? sampledAt), 1)
         let deltas = accounting.sample(parsed, externalInterfaces: TrafficAccountingScope.externalInterfaceNames())
+        resolver.retainPIDs(Set(parsed.map(\.pid)))
+        var resolvedInfoByPID: [pid_t: AppInfo] = [:]
         var bundleDeltas: [TrafficAccountingScope: [String: (info: AppInfo, deltaIn: UInt64, deltaOut: UInt64)]] = [:]
         for delta in deltas {
             let entry = delta.entry
-            let info = resolver.resolve(pid: entry.pid, processName: entry.processName)
+            let info: AppInfo
+            if let cached = resolvedInfoByPID[entry.pid] {
+                info = cached
+            } else {
+                info = resolver.resolve(pid: entry.pid, processName: entry.processName)
+                resolvedInfoByPID[entry.pid] = info
+            }
             var bundled = bundleDeltas[delta.scope]?[info.bundleID] ?? (info: info, deltaIn: 0, deltaOut: 0)
             bundled.deltaIn &+= delta.bytesIn
             bundled.deltaOut &+= delta.bytesOut
