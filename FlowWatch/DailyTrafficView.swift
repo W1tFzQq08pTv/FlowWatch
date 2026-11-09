@@ -263,6 +263,7 @@ private enum RecentTrafficDirection: Equatable {
 }
 
 private struct RecentTrafficSparkline: View, Equatable {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let samples: [TrafficRateSample]
     let direction: RecentTrafficDirection
     let color: Color
@@ -308,8 +309,9 @@ private struct RecentTrafficSparkline: View, Equatable {
                 .chartXAxis(.hidden)
                 .chartYAxis(.hidden)
                 .chartYScale(domain: 0...(maximumValue * 1.08))
+                .flowWatchChartPlot()
                 .animation(
-                    smoothTransitionEnabled ? .easeOut(duration: 0.3) : nil,
+                    smoothTransitionEnabled && !reduceMotion ? .easeOut(duration: 0.3) : nil,
                     value: samples
                 )
             } else {
@@ -326,6 +328,7 @@ private struct RecentTrafficSparkline: View, Equatable {
 
 private struct DailyTrafficChartSection: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     let records: [DailyTrafficItem]
     let title: String
     let dateLabel: String
@@ -383,19 +386,25 @@ private struct DailyTrafficChartSection: View, Equatable {
 
     private var chartLegend: some View {
         HStack(spacing: 10) {
-            legendItem(title: downloadLabel, color: FlowWatchPalette.download)
-            legendItem(title: uploadLabel, color: FlowWatchPalette.upload)
+            legendItem(title: downloadLabel, color: FlowWatchPalette.download, systemImage: "arrow.down")
+            legendItem(title: uploadLabel, color: FlowWatchPalette.upload, systemImage: "arrow.up")
             averageLegendItem
         }
         .font(.caption)
         .foregroundStyle(.secondary)
     }
 
-    private func legendItem(title: String, color: Color) -> some View {
+    private func legendItem(title: String, color: Color, systemImage: String) -> some View {
         HStack(spacing: 5) {
-            Capsule()
-                .fill(color)
-                .frame(width: 13, height: 3)
+            if differentiateWithoutColor {
+                Image(systemName: systemImage)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(color)
+            } else {
+                Capsule()
+                    .fill(color)
+                    .frame(width: 13, height: 3)
+            }
             Text(title)
         }
     }
@@ -494,26 +503,14 @@ private struct DailyTrafficChartSection: View, Equatable {
         let todayLabel = todayChartDayLabel
         let downloadAverage = downloadAverageMB
         let uploadAverage = uploadAverageMB
-        let gridRecords = records
 
         return Chart {
-            ForEach(gridRecords) { record in
-                RuleMark(
-                    x: .value(dateLabel, record.dayLabel)
-                )
-                .foregroundStyle(Color.secondary.opacity(0.16))
-                .lineStyle(StrokeStyle(lineWidth: 0.6, dash: [3, 3]))
-            }
-
             if downloadAverage > 0 {
                 RuleMark(
                     y: .value(downloadAverageLabel, downloadAverage)
                 )
                 .foregroundStyle(FlowWatchPalette.download.opacity(0.56))
                 .lineStyle(StrokeStyle(lineWidth: 1.15, lineCap: .round, dash: [5, 4]))
-                .annotation(position: .trailing, alignment: .leading) {
-                    averageValueLabel(value: downloadAverage, color: FlowWatchPalette.download)
-                }
                 .accessibilityLabel(downloadAverageLabel)
                 .accessibilityValue(FlowWatchByteFormatter.formatMB(downloadAverage))
             }
@@ -524,9 +521,6 @@ private struct DailyTrafficChartSection: View, Equatable {
                 )
                 .foregroundStyle(FlowWatchPalette.upload.opacity(0.56))
                 .lineStyle(StrokeStyle(lineWidth: 1.15, lineCap: .round, dash: [5, 4]))
-                .annotation(position: .trailing, alignment: .leading) {
-                    averageValueLabel(value: uploadAverage, color: FlowWatchPalette.upload)
-                }
                 .accessibilityLabel(uploadAverageLabel)
                 .accessibilityValue(FlowWatchByteFormatter.formatMB(uploadAverage))
             }
@@ -538,7 +532,7 @@ private struct DailyTrafficChartSection: View, Equatable {
                     series: .value(typeLabel, downloadLabel)
                 )
                 .foregroundStyle(FlowWatchPalette.download)
-                .lineStyle(StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                .lineStyle(StrokeStyle(lineWidth: FlowWatchChartStyle.lineWidth, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.monotone)
             }
 
@@ -549,7 +543,14 @@ private struct DailyTrafficChartSection: View, Equatable {
                     series: .value(typeLabel, uploadLabel)
                 )
                 .foregroundStyle(FlowWatchPalette.upload)
-                .lineStyle(StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                .lineStyle(
+                    StrokeStyle(
+                        lineWidth: FlowWatchChartStyle.lineWidth,
+                        lineCap: .round,
+                        lineJoin: .round,
+                        dash: differentiateWithoutColor ? [2, 3] : []
+                    )
+                )
                 .interpolationMethod(.monotone)
             }
 
@@ -567,9 +568,20 @@ private struct DailyTrafficChartSection: View, Equatable {
             domain: axisScale.domain,
             range: .plotDimension(startPadding: 0, endPadding: 0)
         )
+        .flowWatchChartPlot()
         .chartOverlay { proxy in
             GeometryReader { geo in
                 let plotFrame = geo[proxy.plotAreaFrame]
+                let downloadY = proxy.position(forY: downloadAverage) ?? plotFrame.height
+                let uploadY = proxy.position(forY: uploadAverage) ?? plotFrame.height
+                let labelsAreClose = downloadAverage > 0 && uploadAverage > 0 && abs(downloadY - uploadY) < 14
+                let labelCenter = min(max((downloadY + uploadY) / 2, 14), plotFrame.height - 14)
+                let downloadLabelY = labelsAreClose
+                    ? labelCenter + (downloadY <= uploadY ? -7 : 7)
+                    : min(max(downloadY, 7), plotFrame.height - 7)
+                let uploadLabelY = labelsAreClose
+                    ? labelCenter + (downloadY <= uploadY ? 7 : -7)
+                    : min(max(uploadY, 7), plotFrame.height - 7)
 
                 MouseLocationTrackingView { location in
                     updateSelectedRecord(location: location, plotFrame: plotFrame, proxy: proxy)
@@ -582,6 +594,18 @@ private struct DailyTrafficChartSection: View, Equatable {
                         "\($0.dayLabel), \(downloadLabel) \(FlowWatchByteFormatter.formatMB($0.downloadMB)), \(uploadLabel) \(FlowWatchByteFormatter.formatMB($0.uploadMB))"
                     } ?? ""
                 )
+
+                // Keep average labels outside the clipped marks layer.
+                if downloadAverage > 0 {
+                    averageValueLabel(value: downloadAverage, color: FlowWatchPalette.download)
+                        .position(x: plotFrame.maxX + 24, y: plotFrame.minY + downloadLabelY)
+                        .allowsHitTesting(false)
+                }
+                if uploadAverage > 0 {
+                    averageValueLabel(value: uploadAverage, color: FlowWatchPalette.upload)
+                        .position(x: plotFrame.maxX + 24, y: plotFrame.minY + uploadLabelY)
+                        .allowsHitTesting(false)
+                }
             }
         }
         .chartXAxis {
@@ -597,19 +621,19 @@ private struct DailyTrafficChartSection: View, Equatable {
             AxisMarks(position: .leading, values: axisScale.gridValues) { value in
                 let rawValue = value.as(Double.self) ?? 0
                 AxisGridLine(
-                    stroke: StrokeStyle(lineWidth: 0.6, dash: [3, 3])
+                    stroke: FlowWatchChartStyle.gridStroke(isBaseline: rawValue == 0)
                 )
-                .foregroundStyle(Color.secondary.opacity(rawValue == 0 ? 0.24 : 0.2))
+                .foregroundStyle(FlowWatchChartStyle.gridColor(isBaseline: rawValue == 0))
 
                 if rawValue != 0 {
                     AxisValueLabel(axisScale.format(rawValue))
-                        .font(.system(size: 9))
+                        .font(FlowWatchChartStyle.axisFont)
                         .foregroundStyle(Color.secondary.opacity(0.82))
                 }
             }
         }
         .frame(minHeight: 200)
-        .padding(.trailing, 24)
+        .padding(.trailing, 48)
     }
 
     private func averageValueLabel(value: Double, color: Color) -> some View {

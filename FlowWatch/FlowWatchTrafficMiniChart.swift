@@ -7,13 +7,12 @@ struct FlowWatchTrafficMiniChart: View {
     let uploads: [Double]
     var style: Style = .dots
     @State private var hoveredColumn: Int?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Canvas { context, size in
             if style == .balance {
-                let down = max(downloads.first ?? 0, 0)
-                let up = max(uploads.first ?? 0, 0)
+                let down = value(in: downloads, at: 0)
+                let up = value(in: uploads, at: 0)
                 let fraction = down / max(down + up, 1)
                 for index in 0..<36 {
                     let rect = CGRect(x: CGFloat(index) * size.width / 36, y: 10, width: size.width / 36 - 3, height: size.height - 20)
@@ -22,27 +21,39 @@ struct FlowWatchTrafficMiniChart: View {
                 }
                 return
             }
-            let count = max(downloads.count, 1)
+            let count = columnCount
             let pitch = size.width / CGFloat(count)
-            let maximum = max(zip(downloads, uploads).map { $0 + $1 }.max() ?? 0, 1)
+            let maximum = max((0..<count).map {
+                value(in: downloads, at: $0) + value(in: uploads, at: $0)
+            }.max() ?? 0, 1)
             for index in 0..<count {
-                let down = downloads.indices.contains(index) ? max(downloads[index], 0) : 0
-                let up = uploads.indices.contains(index) ? max(uploads[index], 0) : 0
+                let down = value(in: downloads, at: index)
+                let up = value(in: uploads, at: index)
                 let isHovered = hoveredColumn == index
-                let emphasis = hoveredColumn == nil || isHovered ? 1.0 : 0.45
-                let lift: CGFloat = isHovered && !reduceMotion ? 3 : 0
+                let emphasis = hoveredColumn == nil || isHovered ? 1.0 : 0.5
                 if style == .bars {
                     let available = max(size.height - 8, 1)
                     let downHeight = available * down / maximum
                     let upHeight = available * up / maximum
-                    let width = min(pitch - 5, 24)
+                    let width = max(min(pitch - 5, 24), 0)
                     let x = CGFloat(index) * pitch + (pitch - width) / 2
-                    let base = size.height - 3 - lift
+                    let base = size.height - 3
                     if down + up == 0 {
                         context.fill(Path(roundedRect: CGRect(x: x, y: base - 2, width: width, height: 2), cornerRadius: 1), with: .color(FlowWatchPalette.ink.opacity(0.1)))
                     }
-                    context.fill(Path(roundedRect: CGRect(x: x, y: base - downHeight, width: width, height: downHeight), cornerRadius: 2), with: .color(FlowWatchPalette.download.opacity(emphasis * 0.9)))
-                    context.fill(Path(roundedRect: CGRect(x: x, y: base - downHeight - upHeight - 1, width: width, height: upHeight), cornerRadius: 2), with: .color(FlowWatchPalette.upload.opacity(emphasis * 0.85)))
+                    let gap: CGFloat = down > 0 && up > 0 ? min(1.5, upHeight * 0.15) : 0
+                    let downRect = CGRect(x: x, y: base - downHeight, width: width, height: downHeight)
+                    let upRect = CGRect(x: x, y: base - downHeight - upHeight - gap, width: width, height: upHeight)
+                    for (rect, color) in [(downRect, FlowWatchPalette.download), (upRect, FlowWatchPalette.upload)] {
+                        context.fill(
+                            Path(roundedRect: rect, cornerRadius: min(2.5, rect.height / 2)),
+                            with: .linearGradient(
+                                Gradient(colors: [color.opacity(emphasis * 0.9), color.opacity(emphasis * 0.65)]),
+                                startPoint: CGPoint(x: x, y: rect.minY),
+                                endPoint: CGPoint(x: x, y: rect.maxY)
+                            )
+                        )
+                    }
                 } else {
                     let rows = 9
                     for row in 0..<rows {
@@ -50,10 +61,10 @@ struct FlowWatchTrafficMiniChart: View {
                         let upper = row < 4
                         let value = upper ? down : up
                         let extent = value > 0 ? max(0.6, sqrt(value / maximum) * 4) : 0
-                        let isFilled = centerDistance <= extent
+                        let isFilled = value > 0 && centerDistance <= extent
                         let radius: CGFloat = isHovered ? 1.8 : 1.3
                         let x = CGFloat(index) * pitch + pitch / 2
-                        let y = CGFloat(row) * (size.height - 4) / 8 + 2 - lift
+                        let y = CGFloat(row) * max(size.height - 6, 0) / 8 + 3
                         context.fill(Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)),
                                      with: .color(isFilled ? (upper ? FlowWatchPalette.download : FlowWatchPalette.upload).opacity(emphasis * 0.8) : FlowWatchPalette.ink.opacity(0.07)))
                     }
@@ -73,11 +84,18 @@ struct FlowWatchTrafficMiniChart: View {
             GeometryReader { geometry in
                 Color.clear.allowsHitTesting(false)
                     .onChange(of: hoverLocation) { location in
-                        hoveredColumn = location.map { min(max(Int($0 / max(geometry.size.width, 1) * CGFloat(max(downloads.count, 1))), 0), max(downloads.count - 1, 0)) }
+                        hoveredColumn = location.map { min(max(Int($0 / max(geometry.size.width, 1) * CGFloat(columnCount)), 0), columnCount - 1) }
                     }
             }
         }
         .accessibilityHidden(true)
+    }
+
+    private var columnCount: Int { max(downloads.count, uploads.count, 1) }
+
+    private func value(in values: [Double], at index: Int) -> Double {
+        guard values.indices.contains(index), values[index].isFinite else { return 0 }
+        return max(values[index], 0)
     }
 
     @State private var hoverLocation: CGFloat?

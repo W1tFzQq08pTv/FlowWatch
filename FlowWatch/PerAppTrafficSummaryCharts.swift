@@ -7,7 +7,6 @@ enum PerAppTrafficSummaryConstants {
     nonisolated static var maxTrendBuckets: Int { 60 }
     nonisolated static var otherSeriesID: String { "__flowwatch_other__" }
     nonisolated static var chartCardHeight: CGFloat { 228 }
-    nonisolated static var donutSegmentInset: Double { 0.018 }
     nonisolated static var xAxisEdgePadding: CGFloat { 22 }
     nonisolated static var compositionContentMaxWidth: CGFloat { 520 }
 }
@@ -327,6 +326,7 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
     let isLoading: Bool
 
     @EnvironmentObject private var l10n: LocalizationManager
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     static func == (
         lhs: PerAppTrafficSummaryChartsView,
@@ -369,7 +369,7 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
                 donutChart
                     .frame(width: 132, height: 132)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     ForEach(snapshot.slices) { slice in
                         legendRow(slice)
                     }
@@ -389,73 +389,25 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
     }
 
     private var donutChart: some View {
-        ZStack {
-            Canvas { context, size in
-                let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                let radius = max(min(size.width, size.height) / 2 - 14, 1)
-                let lineWidth: CGFloat = 20
-
-                var background = Path()
-                background.addEllipse(
-                    in: CGRect(
-                        x: center.x - radius,
-                        y: center.y - radius,
-                        width: radius * 2,
-                        height: radius * 2
-                    )
+        FlowWatchRingChart(
+            segments: snapshot.slices.map {
+                FlowWatchRingChart.Segment(
+                    value: Double($0.totalBytes),
+                    color: PerAppTrafficSummaryPalette.color(at: $0.colorIndex)
                 )
-                context.stroke(
-                    background,
-                    with: .color(Color.secondary.opacity(0.10)),
-                    lineWidth: lineWidth
-                )
-
-                guard snapshot.totalBytes > 0 else { return }
-                var startAngle = -Double.pi / 2
-                for slice in snapshot.slices {
-                    let fraction = Double(slice.totalBytes) / Double(snapshot.totalBytes)
-                    let sweep = max(fraction * Double.pi * 2, 0)
-                    let segmentInset = min(
-                        PerAppTrafficSummaryConstants.donutSegmentInset,
-                        sweep * 0.18
-                    )
-                    let segmentStart = startAngle + segmentInset
-                    let segmentEnd = startAngle + sweep - segmentInset
-                    var segment = Path()
-                    if segmentEnd > segmentStart {
-                        segment.addArc(
-                            center: center,
-                            radius: radius,
-                            startAngle: .radians(segmentStart),
-                            endAngle: .radians(segmentEnd),
-                            clockwise: false
-                        )
-                        context.stroke(
-                            segment,
-                            with: .color(PerAppTrafficSummaryPalette.color(at: slice.colorIndex)),
-                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt)
-                        )
-                    }
-                    startAngle += sweep
-                }
-            }
-
-            VStack(spacing: 2) {
-                Text(l10n.t("perApp.summary.totalUsage"))
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Text(PerAppSummaryChartFormatter.bytes(Double(snapshot.totalBytes)))
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-            }
-        }
+            },
+            centerTitle: l10n.t("perApp.summary.totalUsage"),
+            centerValue: PerAppSummaryChartFormatter.bytes(Double(snapshot.totalBytes))
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(l10n.t("perApp.summaryCharts.composition.title"))
         .accessibilityValue(PerAppSummaryChartFormatter.bytes(Double(snapshot.totalBytes)))
     }
 
     private var trendCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let maximum = snapshot.series.flatMap(\.points).map { Double($0.totalBytes) }.max() ?? 0
+
+        return VStack(alignment: .leading, spacing: 10) {
             cardHeader(
                 title: l10n.t("perApp.summaryCharts.trend.title"),
                 subtitle: l10n.t("perApp.summaryCharts.trend.subtitle"),
@@ -473,32 +425,34 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
                     ForEach(series.points) { point in
                         LineMark(
                             x: .value(l10n.t("perApp.summaryCharts.time"), point.bucketStart),
-                            y: .value(l10n.t("perApp.summaryCharts.usage"), point.totalBytes),
+                            y: .value(l10n.t("perApp.summaryCharts.usage"), Double(point.totalBytes)),
                             series: .value("Series", series.id)
                         )
-                        .interpolationMethod(.catmullRom)
+                        .interpolationMethod(.monotone)
                         .foregroundStyle(PerAppTrafficSummaryPalette.color(at: series.colorIndex))
                         .lineStyle(
                             StrokeStyle(
-                                lineWidth: series.isOther ? 1.2 : 1.6,
+                                lineWidth: series.isOther ? 1.4 : FlowWatchChartStyle.lineWidth,
                                 lineCap: .round,
                                 lineJoin: .round,
-                                dash: series.isOther ? [5, 4] : []
+                                dash: trendDash(for: series)
                             )
                         )
 
                         if series.points.count <= 30 {
                             PointMark(
                                 x: .value(l10n.t("perApp.summaryCharts.time"), point.bucketStart),
-                                y: .value(l10n.t("perApp.summaryCharts.usage"), point.totalBytes)
+                                y: .value(l10n.t("perApp.summaryCharts.usage"), Double(point.totalBytes))
                             )
                             .foregroundStyle(PerAppTrafficSummaryPalette.color(at: series.colorIndex))
-                            .symbolSize(series.isOther ? 12 : 18)
+                            .symbolSize(series.isOther ? 10 : 14)
                         }
                     }
                 }
             }
             .chartLegend(.hidden)
+            .chartYScale(domain: 0...max(maximum * 1.12, 1))
+            .flowWatchChartPlot()
             .chartXScale(
                 range: .plotDimension(
                     startPadding: PerAppTrafficSummaryConstants.xAxisEdgePadding,
@@ -507,14 +461,10 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
             )
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 5)) { value in
-                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 4]))
-                        .foregroundStyle(Color.secondary.opacity(0.12))
-                    AxisTick(stroke: StrokeStyle(lineWidth: 0.6))
-                        .foregroundStyle(Color.secondary.opacity(0.22))
                     AxisValueLabel {
                         if let date = value.as(Date.self) {
                             Text(axisDateLabel(date))
-                                .font(.system(size: 8.5, weight: .medium))
+                                .font(FlowWatchChartStyle.axisFont)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .fixedSize(horizontal: true, vertical: false)
@@ -524,16 +474,17 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
             }
             .chartYAxis {
                 AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
-                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.55, dash: [3, 4]))
-                        .foregroundStyle(Color.secondary.opacity(0.16))
+                    let isBaseline = (value.as(Double.self) ?? 0) == 0
+                    AxisGridLine(stroke: FlowWatchChartStyle.gridStroke(isBaseline: isBaseline))
+                        .foregroundStyle(FlowWatchChartStyle.gridColor(isBaseline: isBaseline))
                     AxisValueLabel {
                         if let bytes = value.as(UInt64.self) {
                             Text(PerAppSummaryChartFormatter.bytes(Double(bytes)))
-                                .font(.system(size: 8.5, weight: .medium))
+                                .font(FlowWatchChartStyle.axisFont)
                                 .foregroundStyle(.secondary)
                         } else if let bytes = value.as(Double.self) {
                             Text(PerAppSummaryChartFormatter.bytes(bytes))
-                                .font(.system(size: 8.5, weight: .medium))
+                                .font(FlowWatchChartStyle.axisFont)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -548,6 +499,12 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
             alignment: .topLeading
         )
         .perAppSummaryChartCard(accent: Color(red: 0.48, green: 0.42, blue: 0.96))
+    }
+
+    private func trendDash(for series: PerAppTrafficTrendSeries) -> [CGFloat] {
+        guard differentiateWithoutColor else { return series.isOther ? [5, 4] : [] }
+        let patterns: [[CGFloat]] = [[], [6, 3], [2, 3], [7, 3, 2, 3], [3, 2, 3, 5], [1, 3]]
+        return patterns[min(max(series.colorIndex, 0), patterns.count - 1)]
     }
 
     private func cardHeader(
@@ -587,9 +544,18 @@ struct PerAppTrafficSummaryChartsView: View, Equatable {
             : 0
 
         return HStack(spacing: 7) {
-            Circle()
+            RoundedRectangle(cornerRadius: 2)
                 .fill(PerAppTrafficSummaryPalette.color(at: slice.colorIndex))
                 .frame(width: 7, height: 7)
+                .overlay {
+                    if differentiateWithoutColor {
+                        Text("\(slice.colorIndex + 1)")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(FlowWatchPalette.ink)
+                            .frame(width: 12, height: 12)
+                            .background(FlowWatchPalette.surface, in: Circle())
+                    }
+                }
 
             Text(seriesLabel(name: slice.displayName, isOther: slice.isOther))
                 .font(.system(size: 10.5, weight: .medium))
@@ -653,8 +619,8 @@ private enum PerAppTrafficSummaryPalette {
             FlowWatchPalette.download,
             FlowWatchPalette.upload,
             FlowWatchPalette.total,
-            Color(red: 0.12, green: 0.72, blue: 0.65),
-            Color(red: 0.93, green: 0.32, blue: 0.56),
+            Color(red: 0.21, green: 0.63, blue: 0.60),
+            Color(red: 0.78, green: 0.55, blue: 0.22),
             Color.secondary.opacity(0.58)
         ]
         return colors[min(max(index, 0), colors.count - 1)]
