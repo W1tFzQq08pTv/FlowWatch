@@ -271,6 +271,15 @@ private struct RecentTrafficSparkline: View, Equatable {
     let accessibilityTrendLabel: String
     let smoothTransitionEnabled: Bool
 
+    static func == (lhs: RecentTrafficSparkline, rhs: RecentTrafficSparkline) -> Bool {
+        lhs.samples == rhs.samples
+            && lhs.direction == rhs.direction
+            && lhs.color == rhs.color
+            && lhs.accessibilityTitle == rhs.accessibilityTitle
+            && lhs.accessibilityTrendLabel == rhs.accessibilityTrendLabel
+            && lhs.smoothTransitionEnabled == rhs.smoothTransitionEnabled
+    }
+
     private var maximumValue: Double {
         max(samples.map(direction.value(from:)).max() ?? 0, 1)
     }
